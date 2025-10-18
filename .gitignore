@@ -1,0 +1,15 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+# Ambientes Virtuais (Pastas enormes e desnecessárias)
+.venv/
+venv/
+
+# Arquivos de Credenciais (Super secretos!)
+credentials/service_account.json
+config.py
+
+# Cache do Python
+__pycache__/
+*.pyc
+
+# Arquivo de teste da API
+test_models.py
