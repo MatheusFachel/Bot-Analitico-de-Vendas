@@ -196,6 +196,25 @@ def get_gemini_analysis(user_query, sales_df):
 
 # --- Interface do Usuário com Streamlit ---
 st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="centered", initial_sidebar_state="collapsed")
+
+# CSS personalizado para aumentar o tamanho da barra de chat
+st.markdown("""
+<style>
+.stChatInputContainer {
+    padding-bottom: 5px;
+    padding-top: 5px;
+    width: 100%;
+    max-width: 800px;  /* Aumenta a largura máxima da barra */
+    margin: 0 auto;
+}
+
+.stChatInputContainer > input {
+    height: 50px !important;  /* Aumenta a altura da barra */
+    font-size: 16px !important;  /* Aumenta o tamanho da fonte */
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("🤖 AlphaBot | Analista de Vendas")
 
 sales_data_df = load_sales_data(GOOGLE_DRIVE_FOLDER_ID)
