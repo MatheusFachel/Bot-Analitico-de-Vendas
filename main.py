@@ -6,6 +6,7 @@ from googleapiclient.discovery import build
 import os
 import io
 import csv
+from typing import List, Dict
 
 # Tenta carregar as configurações do arquivo config.py
 try:
@@ -40,12 +41,16 @@ def get_google_apis_services():
 
 @st.cache_data(ttl=3600) # Cache de dados por 1 hora
 def load_sales_data(_drive_folder_id):
-    """Carrega e consolida dados de vendas de múltiplas planilhas do Google Drive."""
+    """Carrega e consolida dados de vendas de múltiplas planilhas do Google Drive.
+    Retorna: (df_consolidado, lista_arquivos)
+    lista_arquivos: List[Dict[name,id,mimeType,linhas]]
+    """
     sheets_service, drive_service = get_google_apis_services()
     if not sheets_service or not drive_service:
-        return pd.DataFrame()
+        return pd.DataFrame(), []
 
     all_data = []
+    loaded_files: List[Dict[str, str]] = []
     
     with st.spinner("Buscando planilhas na sua pasta do Google Drive..."):
         try:
@@ -55,7 +60,7 @@ def load_sales_data(_drive_folder_id):
 
             if not items:
                 st.warning(f"Nenhuma planilha ou arquivo CSV encontrado na pasta do Drive. Verifique o ID da pasta em config.py.")
-                return pd.DataFrame()
+                return pd.DataFrame(), []
 
             progress_bar = st.progress(0, text="Iniciando o carregamento dos dados...")
             
@@ -124,6 +129,12 @@ def load_sales_data(_drive_folder_id):
                             continue
                     
                     if df is not None:
+                        loaded_files.append({
+                            "name": file_name,
+                            "id": file_id,
+                            "mimeType": mime_type,
+                            "rows": len(df)
+                        })
                         all_data.append(df)
                 
                 except Exception as file_error:
@@ -134,7 +145,7 @@ def load_sales_data(_drive_folder_id):
 
             if not all_data:
                 st.error("Nenhum dado válido foi carregado. Todas as planilhas estão vazias ou com formato incorreto.")
-                return pd.DataFrame()
+                return pd.DataFrame(), loaded_files
 
             consolidated_df = pd.concat(all_data, ignore_index=True)
             
@@ -154,11 +165,11 @@ def load_sales_data(_drive_folder_id):
                 else:
                     st.warning(f"Coluna esperada '{col}' não encontrada em todos os arquivos.")
 
-            return consolidated_df
+            return consolidated_df, loaded_files
         
         except Exception as e:
             st.error(f"Ocorreu um erro crítico ao ler os arquivos do Google Drive: {e}")
-            return pd.DataFrame()
+            return pd.DataFrame(), []
 
 
 def get_gemini_analysis(user_query, sales_df):
@@ -188,36 +199,51 @@ def get_gemini_analysis(user_query, sales_df):
     """
     
     try:
-        model = genai.GenerativeModel('models/gemini-flash-latest')
+        model = genai.GenerativeModel('models/gemini-2.5-pro')
         response = model.generate_content(prompt_master)
         return response.text
     except Exception as e:
         return f"Desculpe, ocorreu um erro ao contatar o serviço de IA: {e}"
 
 # --- Interface do Usuário com Streamlit ---
-st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="centered", initial_sidebar_state="collapsed")
-
-# CSS personalizado para aumentar o tamanho da barra de chat
-st.markdown("""
-<style>
-.stChatInputContainer {
-    padding-bottom: 5px;
-    padding-top: 5px;
-    width: 100%;
-    max-width: 800px;  /* Aumenta a largura máxima da barra */
-    margin: 0 auto;
-}
-
-.stChatInputContainer > input {
-    height: 50px !important;  /* Aumenta a altura da barra */
-    font-size: 16px !important;  /* Aumenta o tamanho da fonte */
-}
-</style>
-""", unsafe_allow_html=True)
-
+st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="wide", initial_sidebar_state="expanded")
+st.markdown(
+    """
+    <style>
+    /* Aumenta contraste e visibilidade do input de chat */
+    .stChatFloatingInputContainer, .stChatInputContainer { 
+        border: 1px solid #e91e63 !important; 
+        box-shadow: 0 0 10px rgba(233,30,99,0.35);
+    }
+    .stChatInput > div > div textarea {
+        font-size: 1rem !important;
+    }
+    /* Sidebar estilizada para lista de arquivos */
+    section[data-testid="stSidebar"] .stMarkdown ul {
+        list-style: none; padding-left: 0;
+    }
+    section[data-testid="stSidebar"] li { 
+        margin: .25rem 0; padding: .35rem .5rem; background: #1f2023; border-radius: .35rem;
+    }
+    section[data-testid="stSidebar"] li small { color: #bbb; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 st.title("🤖 AlphaBot | Analista de Vendas")
 
-sales_data_df = load_sales_data(GOOGLE_DRIVE_FOLDER_ID)
+sales_data_df, loaded_files = load_sales_data(GOOGLE_DRIVE_FOLDER_ID)
+
+# Sidebar: lista de arquivos carregados
+with st.sidebar:
+    st.header("Arquivos carregados")
+    if loaded_files:
+        for f in loaded_files:
+            icon = "📄" if f.get("mimeType") == 'text/csv' else "🧮"
+            rows_info = f" - {f.get('rows', 0)} linhas" if isinstance(f.get('rows'), int) else ""
+            st.markdown(f"- {icon} **{f['name']}**{rows_info}")
+    else:
+        st.info("Nenhum arquivo listado ainda.")
 
 if not sales_data_df.empty:
     st.success(f"Dados de {len(sales_data_df)} transações carregados com sucesso!")
