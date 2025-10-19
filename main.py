@@ -172,7 +172,7 @@ def load_sales_data(_drive_folder_id):
             return pd.DataFrame(), []
 
 
-def get_gemini_analysis(user_query, sales_df):
+def get_gemini_analysis(user_query, sales_df, model_name: str = 'models/gemini-2.5-pro'):
     """Envia a pergunta e os dados para o Gemini para análise."""
     if sales_df.empty:
         return "Os dados de vendas não foram carregados. Não consigo analisar."
@@ -199,7 +199,7 @@ def get_gemini_analysis(user_query, sales_df):
     """
     
     try:
-        model = genai.GenerativeModel('models/gemini-2.5-pro')
+        model = genai.GenerativeModel(model_name)
         response = model.generate_content(prompt_master)
         return response.text
     except Exception as e:
@@ -234,8 +234,26 @@ st.title("🤖 AlphaBot | Analista de Vendas")
 
 sales_data_df, loaded_files = load_sales_data(GOOGLE_DRIVE_FOLDER_ID)
 
-# Sidebar: lista de arquivos carregados
+# Sidebar: configurações e lista de arquivos
 with st.sidebar:
+    st.subheader("Configurações")
+    model_options = [
+        'models/gemini-2.5-pro',
+        'models/gemini-2.5-flash',
+        'models/gemini-pro-latest',
+        'models/gemini-flash-latest',
+    ]
+    selected_model = st.selectbox(
+        "Modelo do Gemini",
+        options=model_options,
+        index=model_options.index('models/gemini-2.5-pro'),
+        key="model_name",
+        help="Escolha o modelo para responder às suas perguntas. Recomendado: gemini-2.5-pro."
+    )
+    if st.button("Recarregar dados", use_container_width=True, help="Limpa o cache e recarrega os arquivos do Drive"):
+        st.cache_data.clear()
+        st.rerun()
+
     st.header("Arquivos carregados")
     if loaded_files:
         for f in loaded_files:
@@ -262,7 +280,7 @@ if not sales_data_df.empty:
 
         with st.chat_message("assistant"):
             with st.spinner("Analisando os dados..."):
-                response = get_gemini_analysis(user_query, sales_data_df)
+                response = get_gemini_analysis(user_query, sales_data_df, model_name=st.session_state.get("model_name", 'models/gemini-2.5-pro'))
                 st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 else:
