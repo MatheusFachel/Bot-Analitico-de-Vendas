@@ -271,6 +271,8 @@ def load_sales_data(_drive_folder_id):
                         for col in ['quantidade', 'preco_unitario', 'receita_total']:
                             if col in df.columns:
                                 df[col] = _clean_numeric_series(df[col])
+                        # Marcar origem do arquivo para permitir filtro por arquivo
+                        df['source_file'] = file_name
                         all_data.append(df)
                         loaded_files.append({"name": file_name, "id": file_id, "mimeType": mime_type, "rows": len(df)})
                 
@@ -368,19 +370,44 @@ st.title("🤖 AlphaBot | Analista de Vendas")
 
 sales_data_df, loaded_files, load_stats = load_sales_data(GOOGLE_DRIVE_FOLDER_ID)
 
+# Descoberta automática de modelos (com cache e fallback)
+@st.cache_data(ttl=10800)
+def get_available_models() -> List[str]:
+    try:
+        models = []
+        for m in genai.list_models():
+            if hasattr(m, 'supported_generation_methods') and 'generateContent' in m.supported_generation_methods:
+                models.append(m.name)
+        # ordenar para lista estável
+        models = sorted(set(models))
+        # sugeridos primeiro
+        preferred = [
+            'models/gemini-2.5-pro',
+            'models/gemini-2.5-flash',
+            'models/gemini-pro-latest',
+            'models/gemini-flash-latest',
+        ]
+        # garantimos que preferidos venham no topo
+        head = [m for m in preferred if m in models]
+        tail = [m for m in models if m not in preferred]
+        return head + tail
+    except Exception:
+        # Fallback simples
+        return [
+            'models/gemini-2.5-pro',
+            'models/gemini-2.5-flash',
+            'models/gemini-pro-latest',
+            'models/gemini-flash-latest',
+        ]
+
 # Sidebar: configurações e lista de arquivos
 with st.sidebar:
     st.subheader("Configurações")
-    model_options = [
-        'models/gemini-2.5-pro',
-        'models/gemini-2.5-flash',
-        'models/gemini-pro-latest',
-        'models/gemini-flash-latest',
-    ]
+    model_options = get_available_models()
     selected_model = st.selectbox(
         "Modelo do Gemini",
         options=model_options,
-        index=model_options.index('models/gemini-2.5-pro'),
+        index=model_options.index('models/gemini-2.5-pro') if 'models/gemini-2.5-pro' in model_options else 0,
         key="model_name",
         help="Escolha o modelo para responder às suas perguntas. Recomendado: gemini-2.5-pro."
     )
@@ -389,11 +416,27 @@ with st.sidebar:
         st.rerun()
 
     st.header("Arquivos carregados")
+    selected_file_names: List[str] = []
     if loaded_files:
+        st.caption("Selecione os arquivos que deseja incluir na análise")
+        # Botões rápidos
+        cols_sel = st.columns(2)
+        with cols_sel[0]:
+            if st.button("Selecionar todos", use_container_width=True):
+                for f in loaded_files:
+                    st.session_state[f"file_{f['id']}"] = True
+        with cols_sel[1]:
+            if st.button("Limpar seleção", use_container_width=True):
+                for f in loaded_files:
+                    st.session_state[f"file_{f['id']}"] = False
+        # Lista com checkboxes
         for f in loaded_files:
             icon = "📄" if f.get("mimeType") == 'text/csv' else "🧮"
-            rows_info = f" - {f.get('rows', 0)} linhas" if isinstance(f.get('rows'), int) else ""
-            st.markdown(f"- {icon} **{f['name']}**{rows_info}")
+            key = f"file_{f['id']}"
+            default_checked = st.session_state.get(key, True)
+            checked = st.checkbox(f"{icon} {f['name']} ({f.get('rows', 0)} linhas)", value=default_checked, key=key)
+            if checked:
+                selected_file_names.append(f['name'])
     else:
         st.info("Nenhum arquivo listado ainda.")
 
@@ -403,13 +446,102 @@ with st.sidebar:
     st.write(f"Linhas consolidadas: {load_stats.get('row_count', 0)}")
     st.write(f"Tempo de carga: {load_stats.get('load_seconds', 0):.2f}s")
 
+    # Filtros de dados
+    st.divider()
+    st.subheader("Filtros")
+    # Valores padrão e chaves em session_state para persistência leve
+    filter_info = {}
+    if not sales_data_df.empty:
+        df_for_filters = sales_data_df.copy()
+        # Filtro por arquivos selecionados
+        if 'source_file' in df_for_filters.columns and selected_file_names:
+            df_for_filters = df_for_filters[df_for_filters['source_file'].isin(selected_file_names)]
+        # Filtro por período
+        if 'data' in df_for_filters.columns:
+            min_date = pd.to_datetime(df_for_filters['data'], errors='coerce').min()
+            max_date = pd.to_datetime(df_for_filters['data'], errors='coerce').max()
+            if pd.notna(min_date) and pd.notna(max_date):
+                start_d = st.date_input("Início", value=min_date.date(), key='f_ini')
+                end_d = st.date_input("Fim", value=max_date.date(), key='f_fim')
+                filter_info['date_range'] = (start_d, end_d)
+        # Filtro por produto/região
+        if 'produto' in df_for_filters.columns:
+            prods = sorted([p for p in df_for_filters['produto'].dropna().astype(str).unique()][:5000])
+            sel_prods = st.multiselect("Produtos", options=prods, default=prods[: min(len(prods), 10)], key='f_produtos')
+            filter_info['produtos'] = sel_prods
+        if 'regiao' in df_for_filters.columns:
+            regs = sorted([r for r in df_for_filters['regiao'].dropna().astype(str).unique()][:5000])
+            sel_regs = st.multiselect("Regiões", options=regs, default=regs[: min(len(regs), 10)], key='f_regioes')
+            filter_info['regioes'] = sel_regs
+
+def _apply_filters(df: pd.DataFrame, selected_files: List[str], filter_info: Dict) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df
+    if selected_files and 'source_file' in out.columns:
+        out = out[out['source_file'].isin(selected_files)]
+    if filter_info:
+        # período
+        if 'date_range' in filter_info and 'data' in out.columns:
+            ini, fim = filter_info['date_range']
+            out = out[(out['data'].dt.date >= ini) & (out['data'].dt.date <= fim)]
+        # produto
+        if 'produtos' in filter_info and 'produto' in out.columns and filter_info['produtos']:
+            out = out[out['produto'].astype(str).isin(filter_info['produtos'])]
+        # regiao
+        if 'regioes' in filter_info and 'regiao' in out.columns and filter_info['regioes']:
+            out = out[out['regiao'].astype(str).isin(filter_info['regioes'])]
+    return out
+
+
+def _fmt_brl(v: float) -> str:
+    try:
+        return f"R$ {v:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    except Exception:
+        return "R$ 0,00"
+
+
 if not sales_data_df.empty:
     st.success(f"Dados de {len(sales_data_df)} transações carregados com sucesso!")
+    # Aplica filtros da sidebar
+    filtered_df = _apply_filters(sales_data_df, selected_file_names if 'selected_file_names' in locals() else [], filter_info if 'filter_info' in locals() else {})
+
+    # KPIs
+    receita_col = 'receita_total' if 'receita_total' in filtered_df.columns else None
+    if not receita_col and {'quantidade','preco_unitario'}.issubset(filtered_df.columns):
+        receita_col = 'receita_total_temp'
+        filtered_df[receita_col] = filtered_df['quantidade'] * filtered_df['preco_unitario']
+    total_receita = float(filtered_df[receita_col].sum()) if receita_col else 0.0
+    total_transacoes = int(len(filtered_df))
+    ticket_medio = (total_receita / total_transacoes) if total_transacoes > 0 else 0.0
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Receita total (estimada)", _fmt_brl(total_receita))
+    c2.metric("Transações (linhas)", f"{total_transacoes:,}".replace(',', '.'))
+    c3.metric("Ticket médio (por venda)", _fmt_brl(ticket_medio))
+
+    # Período e Top produto (texto)
+    if 'data' in filtered_df.columns:
+        try:
+            min_dt = filtered_df['data'].min(); max_dt = filtered_df['data'].max()
+            st.caption(f"Período filtrado: {min_dt.date() if pd.notna(min_dt) else '?'} a {max_dt.date() if pd.notna(max_dt) else '?'}")
+        except Exception:
+            pass
+    if 'produto' in filtered_df.columns:
+        try:
+            top_prod = (
+                filtered_df.groupby('produto')[receita_col].sum().sort_values(ascending=False).head(1)
+                if receita_col else filtered_df.groupby('produto')['quantidade'].sum().sort_values(ascending=False).head(1)
+            )
+            if not top_prod.empty:
+                st.caption(f"Top produto: {top_prod.index[0]}")
+        except Exception:
+            pass
     with st.expander("Prévia dos dados (25 linhas)"):
-        st.dataframe(sales_data_df.head(25), use_container_width=True)
+        st.dataframe(filtered_df.head(25), use_container_width=True)
     st.download_button(
         label="Baixar CSV consolidado",
-        data=sales_data_df.to_csv(index=False),
+        data=filtered_df.to_csv(index=False),
         file_name="vendas_consolidado.csv",
         mime="text/csv"
     )
@@ -429,7 +561,7 @@ if not sales_data_df.empty:
         with st.chat_message("assistant"):
             with st.spinner("Analisando os dados..."):
                 # Prepara um resumo e amostra para reduzir payload ao LLM
-                resumo, csv_amostra = _prepare_analysis_payload(sales_data_df, max_rows=1000)
+                resumo, csv_amostra = _prepare_analysis_payload(filtered_df, max_rows=1000)
                 # Monta prompt compacto com resumo + amostra
                 compact_query = f"""
                 CONTEXTO: Abaixo há um resumo estatístico dos dados de vendas e uma amostra de linhas.
@@ -444,7 +576,7 @@ if not sales_data_df.empty:
                 PERGUNTA DO USUÁRIO
                 {user_query}
                 """
-                response = get_gemini_analysis(compact_query, sales_data_df, model_name=st.session_state.get("model_name", 'models/gemini-2.5-pro'))
+                response = get_gemini_analysis(compact_query, filtered_df, model_name=st.session_state.get("model_name", 'models/gemini-2.5-pro'))
                 st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 else:
