@@ -9,6 +9,14 @@ import csv
 import time
 import unicodedata
 from typing import List, Dict, Tuple
+from collections import Counter
+
+# Dependência opcional para Excel
+try:
+    import openpyxl  # noqa: F401
+    _HAS_OPENPYXL = True
+except Exception:
+    _HAS_OPENPYXL = False
 
 # Tenta carregar as configurações do arquivo config.py
 try:
@@ -35,6 +43,11 @@ def get_google_apis_services():
         )
         sheets_service = build('sheets', 'v4', credentials=creds)
         drive_service = build('drive', 'v3', credentials=creds)
+        # Guarda o email da conta de serviço para diagnóstico
+        try:
+            st.session_state['service_account_email'] = getattr(creds, 'service_account_email', '')
+        except Exception:
+            pass
         return sheets_service, drive_service
     except Exception as e:
         st.error(f"Erro de autenticação com o Google. Verifique o caminho do arquivo 'service_account.json' e se a API está habilitada. Detalhes: {e}")
@@ -153,28 +166,37 @@ def _prepare_analysis_payload(df: pd.DataFrame, max_rows: int = 1000) -> Tuple[s
 @st.cache_data(ttl=3600) # Cache de dados por 1 hora
 def load_sales_data(_drive_folder_id):
     """Carrega e consolida dados de vendas de múltiplas planilhas do Google Drive.
-    Retorna: (df_consolidado, lista_arquivos, stats)
+    Retorna: (df_consolidado, lista_arquivos, stats, drive_info)
     lista_arquivos: List[Dict[name,id,mimeType,linhas]]
     stats: {file_count, row_count, load_seconds}
+    drive_info: {folder_id, counts_by_mime: dict, unsupported: list[str]}
     """
     sheets_service, drive_service = get_google_apis_services()
     if not sheets_service or not drive_service:
-        return pd.DataFrame(), [], {"file_count": 0, "row_count": 0, "load_seconds": 0.0}
+        return pd.DataFrame(), [], {"file_count": 0, "row_count": 0, "load_seconds": 0.0}, {"folder_id": _drive_folder_id, "counts_by_mime": {}, "unsupported": []}
 
     start_ts = time.time()
     all_data = []
     loaded_files: List[Dict[str, str]] = []
+    unsupported_files: List[str] = []
     
     with st.spinner("Buscando planilhas na sua pasta do Google Drive..."):
         try:
-            query = f"'{_drive_folder_id}' in parents and (mimeType='application/vnd.google-apps.spreadsheet' or mimeType='text/csv')"
+            query = (
+                f"'{_drive_folder_id}' in parents and ("
+                "mimeType='application/vnd.google-apps.spreadsheet' or "
+                "mimeType='text/csv' or "
+                "mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')"
+            )
             items: List[Dict] = []
             page_token = None
             while True:
                 results = drive_service.files().list(
                     q=query,
                     fields="nextPageToken, files(id, name, mimeType)",
-                    pageToken=page_token
+                    pageToken=page_token,
+                    includeItemsFromAllDrives=True,
+                    supportsAllDrives=True
                 ).execute()
                 items.extend(results.get('files', []))
                 page_token = results.get('nextPageToken')
@@ -182,8 +204,11 @@ def load_sales_data(_drive_folder_id):
                     break
 
             if not items:
-                st.warning(f"Nenhuma planilha ou arquivo CSV encontrado na pasta do Drive. Verifique o ID da pasta em config.py.")
-                return pd.DataFrame(), []
+                st.warning("Nenhum arquivo suportado encontrado na pasta do Drive (Sheets/CSV/XLSX). Verifique o ID da pasta e os tipos de arquivo.")
+                elapsed = time.time() - start_ts
+                counts = {}
+                drive_info = {"folder_id": _drive_folder_id, "counts_by_mime": counts, "unsupported": []}
+                return pd.DataFrame(), [], {"file_count": 0, "row_count": 0, "load_seconds": elapsed}, drive_info
 
             progress_bar = st.progress(0, text="Iniciando o carregamento dos dados...")
             
@@ -191,11 +216,12 @@ def load_sales_data(_drive_folder_id):
                 file_name = item['name']
                 file_id = item['id']
                 mime_type = item['mimeType']
-                
+
                 progress_bar.progress((i + 1) / len(items), text=f"Lendo arquivo: {file_name}")
-                
+
                 try:
                     df = None
+
                     if mime_type == 'application/vnd.google-apps.spreadsheet':
                         # Lê TODAS as abas (sheets) da planilha e concatena
                         meta = sheets_service.spreadsheets().get(spreadsheetId=file_id, fields='sheets(properties(title))').execute()
@@ -218,28 +244,27 @@ def load_sales_data(_drive_folder_id):
                             df = pd.concat(sub_frames, ignore_index=True)
                         else:
                             st.info(f"Arquivo '{file_name}' sem dados utilizáveis. Pulado.")
-                            df = None
-                            
+
                     elif mime_type == 'text/csv':
                         # --- INÍCIO DA LÓGICA FLEXÍVEL DE LEITURA ---
                         request = drive_service.files().get_media(fileId=file_id)
                         csv_content_bytes = request.execute()
-                        
-                        detected_delimiter = ',' # Padrão
-                        detected_decimal = '.' # Padrão
-                        
+
+                        detected_delimiter = ','  # Padrão
+                        detected_decimal = '.'    # Padrão
+
                         try:
                             # Tenta detectar o formato lendo uma amostra
                             sample_text = csv_content_bytes[:2048].decode('utf-8', errors='ignore')
                             dialect = csv.Sniffer().sniff(sample_text, delimiters=',;')
                             detected_delimiter = dialect.delimiter
-                            
+
                             # Regra de negócio: infere o decimal baseado no delimitador
                             if detected_delimiter == ';':
                                 detected_decimal = ','
                             elif detected_delimiter == ',':
                                 detected_decimal = '.'
-                                
+
                         except (csv.Error, UnicodeDecodeError):
                             # Se o 'sniff' falhar, apenas assume o padrão (vírgula/ponto)
                             st.info(f"Não foi possível detectar o formato de '{file_name}'. Tentando com delimitador ',' e decimal '.'.")
@@ -251,18 +276,41 @@ def load_sales_data(_drive_folder_id):
                         # Rebobina o stream e lê com o pandas usando os parâmetros detectados
                         csv_content = io.BytesIO(csv_content_bytes)
                         df = pd.read_csv(
-                            csv_content, 
-                            delimiter=detected_delimiter, 
+                            csv_content,
+                            delimiter=detected_delimiter,
                             decimal=detected_decimal,
                             thousands=thousands
                         )
                         # --- FIM DA LÓGICA FLEXÍVEL ---
-                        
+
                         # Normaliza colunas para verificar presença de 'data'
                         df = _standardize_dataframe(df)
                         if 'data' not in df.columns:
                             st.warning(f"O arquivo CSV '{file_name}' foi lido mas não possui coluna de data reconhecida. Será incluído mesmo assim.")
-                    
+
+                    elif mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+                        # XLSX (Excel) - somente se openpyxl estiver instalado
+                        if not _HAS_OPENPYXL:
+                            st.error("Arquivo XLSX detectado, mas o pacote 'openpyxl' não está instalado. Adicione 'openpyxl' ao requirements.txt e reinstale.")
+                            unsupported_files.append(file_name)
+                            df = None
+                        else:
+                            request = drive_service.files().get_media(fileId=file_id)
+                            xlsx_bytes = request.execute()
+                            xlsbio = io.BytesIO(xlsx_bytes)
+                            # Lê todas as abas
+                            try:
+                                xls = pd.ExcelFile(xlsbio, engine='openpyxl')
+                                sub_frames = []
+                                for sheet in xls.sheet_names:
+                                    tmp = pd.read_excel(xls, sheet_name=sheet, engine='openpyxl')
+                                    tmp = _standardize_dataframe(tmp)
+                                    sub_frames.append(tmp)
+                                df = pd.concat(sub_frames, ignore_index=True) if sub_frames else None
+                            except Exception as e:
+                                st.error(f"Erro ao ler XLSX '{file_name}': {e}")
+                                df = None
+
                     if df is not None:
                         df = _standardize_dataframe(df)
                         # Tratamento de datas e numéricos
@@ -275,7 +323,7 @@ def load_sales_data(_drive_folder_id):
                         df['source_file'] = file_name
                         all_data.append(df)
                         loaded_files.append({"name": file_name, "id": file_id, "mimeType": mime_type, "rows": len(df)})
-                
+
                 except Exception as file_error:
                     st.error(f"Erro ao processar o arquivo {file_name}: {file_error}. Pulando...")
 
@@ -283,9 +331,11 @@ def load_sales_data(_drive_folder_id):
             progress_bar.empty()
 
             if not all_data:
-                st.error("Nenhum dado válido foi carregado. Todas as planilhas estão vazias ou com formato incorreto.")
+                st.error("Nenhum dado válido foi carregado. Todas as planilhas estão vazias, inacessíveis, em formato não suportado ou com cabeçalhos incompatíveis.")
                 elapsed = time.time() - start_ts
-                return pd.DataFrame(), loaded_files, {"file_count": len(items), "row_count": 0, "load_seconds": elapsed}
+                counts = Counter([it.get('mimeType') for it in items])
+                drive_info = {"folder_id": _drive_folder_id, "counts_by_mime": dict(counts), "unsupported": unsupported_files}
+                return pd.DataFrame(), loaded_files, {"file_count": len(items), "row_count": 0, "load_seconds": elapsed}, drive_info
 
             consolidated_df = pd.concat(all_data, ignore_index=True)
             # Garante colunas em padrão canônico
@@ -301,11 +351,13 @@ def load_sales_data(_drive_folder_id):
 
             elapsed = time.time() - start_ts
             stats = {"file_count": len(items), "row_count": len(consolidated_df), "load_seconds": elapsed}
-            return consolidated_df, loaded_files, stats
+            counts = Counter([it.get('mimeType') for it in items])
+            drive_info = {"folder_id": _drive_folder_id, "counts_by_mime": dict(counts), "unsupported": unsupported_files}
+            return consolidated_df, loaded_files, stats, drive_info
         
         except Exception as e:
             st.error(f"Ocorreu um erro crítico ao ler os arquivos do Google Drive: {e}")
-            return pd.DataFrame(), [], {"file_count": 0, "row_count": 0, "load_seconds": 0.0}
+            return pd.DataFrame(), [], {"file_count": 0, "row_count": 0, "load_seconds": 0.0}, {"folder_id": _drive_folder_id, "counts_by_mime": {}, "unsupported": []}
 
 
 def get_gemini_analysis(user_query, sales_df, model_name: str = 'models/gemini-2.5-pro'):
@@ -368,7 +420,7 @@ st.markdown(
 )
 st.title("🤖 AlphaBot | Analista de Vendas")
 
-sales_data_df, loaded_files, load_stats = load_sales_data(GOOGLE_DRIVE_FOLDER_ID)
+sales_data_df, loaded_files, load_stats, drive_info = load_sales_data(GOOGLE_DRIVE_FOLDER_ID)
 
 # Descoberta automática de modelos (com cache e fallback)
 @st.cache_data(ttl=10800)
@@ -445,6 +497,20 @@ with st.sidebar:
     st.write(f"Arquivos encontrados: {load_stats.get('file_count', 0)}")
     st.write(f"Linhas consolidadas: {load_stats.get('row_count', 0)}")
     st.write(f"Tempo de carga: {load_stats.get('load_seconds', 0):.2f}s")
+
+    # Diagnóstico do Drive
+    with st.expander("Diagnóstico do Drive"):
+        st.write(f"Pasta do Drive (ID): {drive_info.get('folder_id', '')}")
+        sa_email = st.session_state.get('service_account_email', '')
+        if sa_email:
+            st.write(f"Conta de serviço: {sa_email}")
+            st.info("Certifique-se de que a pasta do Drive está compartilhada com este e-mail com pelo menos permissão de Leitor.")
+        counts = drive_info.get('counts_by_mime', {})
+        if counts:
+            st.write("Arquivos por tipo (mime):")
+            st.json(counts)
+        if drive_info.get('unsupported'):
+            st.warning("Arquivos não suportados ou que exigem dependências: " + ", ".join(drive_info['unsupported']))
 
     # Filtros de dados
     st.divider()
