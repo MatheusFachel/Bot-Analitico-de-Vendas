@@ -452,8 +452,8 @@ def get_available_models() -> List[str]:
             'models/gemini-flash-latest',
         ]
 
-# Sidebar: configurações e lista de arquivos
 with st.sidebar:
+    # 1) Configurações
     st.subheader("Configurações")
     model_options = get_available_models()
     selected_model = st.selectbox(
@@ -467,11 +467,39 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
+    # 2) Filtros (sem filtros ativados por padrão)
+    st.divider()
+    st.subheader("Filtros")
+    filter_info = {}
+    if not sales_data_df.empty:
+        df_for_filters = sales_data_df  # base completa; seleção de arquivos virá depois
+        # Período (desativado por padrão)
+        if 'data' in df_for_filters.columns:
+            enable_date = st.checkbox("Filtrar por período", value=False, key='enable_date_filter')
+            if enable_date:
+                min_date = pd.to_datetime(df_for_filters['data'], errors='coerce').min()
+                max_date = pd.to_datetime(df_for_filters['data'], errors='coerce').max()
+                if pd.notna(min_date) and pd.notna(max_date):
+                    start_d = st.date_input("Início", value=min_date.date(), key='f_ini')
+                    end_d = st.date_input("Fim", value=max_date.date(), key='f_fim')
+                    filter_info['date_range'] = (start_d, end_d)
+        # Produtos (vazio por padrão)
+        if 'produto' in df_for_filters.columns:
+            prods = sorted([p for p in df_for_filters['produto'].dropna().astype(str).unique()][:5000])
+            sel_prods = st.multiselect("Produtos", options=prods, default=[], key='f_produtos')
+            filter_info['produtos'] = sel_prods
+        # Regiões (vazio por padrão)
+        if 'regiao' in df_for_filters.columns:
+            regs = sorted([r for r in df_for_filters['regiao'].dropna().astype(str).unique()][:5000])
+            sel_regs = st.multiselect("Regiões", options=regs, default=[], key='f_regioes')
+            filter_info['regioes'] = sel_regs
+
+    # 3) Arquivos carregados
+    st.divider()
     st.header("Arquivos carregados")
     selected_file_names: List[str] = []
     if loaded_files:
         st.caption("Selecione os arquivos que deseja incluir na análise")
-        # Botões rápidos
         cols_sel = st.columns(2)
         with cols_sel[0]:
             if st.button("Selecionar todos", use_container_width=True):
@@ -481,7 +509,6 @@ with st.sidebar:
             if st.button("Limpar seleção", use_container_width=True):
                 for f in loaded_files:
                     st.session_state[f"file_{f['id']}"] = False
-        # Lista com checkboxes
         for f in loaded_files:
             icon = "📄" if f.get("mimeType") == 'text/csv' else "🧮"
             key = f"file_{f['id']}"
@@ -492,53 +519,12 @@ with st.sidebar:
     else:
         st.info("Nenhum arquivo listado ainda.")
 
+    # 4) Resumo da carga (sem diagnóstico)
     st.divider()
     st.subheader("Resumo da carga")
     st.write(f"Arquivos encontrados: {load_stats.get('file_count', 0)}")
     st.write(f"Linhas consolidadas: {load_stats.get('row_count', 0)}")
     st.write(f"Tempo de carga: {load_stats.get('load_seconds', 0):.2f}s")
-
-    # Diagnóstico do Drive
-    with st.expander("Diagnóstico do Drive"):
-        st.write(f"Pasta do Drive (ID): {drive_info.get('folder_id', '')}")
-        sa_email = st.session_state.get('service_account_email', '')
-        if sa_email:
-            st.write(f"Conta de serviço: {sa_email}")
-            st.info("Certifique-se de que a pasta do Drive está compartilhada com este e-mail com pelo menos permissão de Leitor.")
-        counts = drive_info.get('counts_by_mime', {})
-        if counts:
-            st.write("Arquivos por tipo (mime):")
-            st.json(counts)
-        if drive_info.get('unsupported'):
-            st.warning("Arquivos não suportados ou que exigem dependências: " + ", ".join(drive_info['unsupported']))
-
-    # Filtros de dados
-    st.divider()
-    st.subheader("Filtros")
-    # Valores padrão e chaves em session_state para persistência leve
-    filter_info = {}
-    if not sales_data_df.empty:
-        df_for_filters = sales_data_df.copy()
-        # Filtro por arquivos selecionados
-        if 'source_file' in df_for_filters.columns and selected_file_names:
-            df_for_filters = df_for_filters[df_for_filters['source_file'].isin(selected_file_names)]
-        # Filtro por período
-        if 'data' in df_for_filters.columns:
-            min_date = pd.to_datetime(df_for_filters['data'], errors='coerce').min()
-            max_date = pd.to_datetime(df_for_filters['data'], errors='coerce').max()
-            if pd.notna(min_date) and pd.notna(max_date):
-                start_d = st.date_input("Início", value=min_date.date(), key='f_ini')
-                end_d = st.date_input("Fim", value=max_date.date(), key='f_fim')
-                filter_info['date_range'] = (start_d, end_d)
-        # Filtro por produto/região
-        if 'produto' in df_for_filters.columns:
-            prods = sorted([p for p in df_for_filters['produto'].dropna().astype(str).unique()][:5000])
-            sel_prods = st.multiselect("Produtos", options=prods, default=prods[: min(len(prods), 10)], key='f_produtos')
-            filter_info['produtos'] = sel_prods
-        if 'regiao' in df_for_filters.columns:
-            regs = sorted([r for r in df_for_filters['regiao'].dropna().astype(str).unique()][:5000])
-            sel_regs = st.multiselect("Regiões", options=regs, default=regs[: min(len(regs), 10)], key='f_regioes')
-            filter_info['regioes'] = sel_regs
 
 def _apply_filters(df: pd.DataFrame, selected_files: List[str], filter_info: Dict) -> pd.DataFrame:
     if df is None or df.empty:
