@@ -3,12 +3,15 @@ import pandas as pd
 import google.generativeai as genai
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
 import os
 import io
 import csv
 import time
 import unicodedata
-from typing import List, Dict, Tuple
+import re
+import json
+from typing import List, Dict, Tuple, Any
 from collections import Counter
 
 # Dependência opcional para Excel
@@ -54,6 +57,39 @@ def get_google_apis_services():
         st.stop()
         return None, None
 
+
+def _execute_request_with_retries(request, max_retries: int = 3, backoff: float = 1.5):
+    """Executa uma requisição googleapiclient com tentativas e backoff exponencial simples."""
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            return request.execute(num_retries=0)
+        except Exception as e:
+            last_exc = e
+            time.sleep(min(5.0, (backoff ** attempt)))
+    # Se falhar todas as tentativas, relança a última exceção
+    raise last_exc
+
+
+def _download_drive_file_bytes(drive_service, file_id: str, max_retries: int = 3) -> bytes:
+    """Baixa arquivo do Drive em chunks com retries para reduzir falhas de conexão."""
+    buf = io.BytesIO()
+    request = drive_service.files().get_media(fileId=file_id)
+    downloader = MediaIoBaseDownload(buf, request, chunksize=1024 * 1024)
+    done = False
+    retries = 0
+    while not done:
+        try:
+            status, done = downloader.next_chunk()
+        except Exception as e:
+            retries += 1
+            if retries >= max_retries:
+                raise e
+            time.sleep(min(5.0, 1.5 ** retries))
+            continue
+    buf.seek(0)
+    return buf.read()
+
 def _normalize_colname(name: str) -> str:
     text = str(name).strip()
     text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
@@ -70,12 +106,18 @@ def _standardize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns={c: _normalize_colname(c) for c in df.columns})
     # Mapeia sinônimos para nomes canônicos
     alias_map = {
-        'data': {'data', 'date', 'dt'},
+        'data': {
+            'data', 'date', 'dt',
+            'data_venda', 'data_da_venda', 'data_pedido', 'data_do_pedido',
+            'data_emissao', 'emissao', 'emissao_nf', 'data_nf', 'data_nota',
+            'data_de_venda', 'data_de_emissao', 'dt_venda', 'dt_emissao'
+        },
         'quantidade': {'quantidade', 'qtd', 'quant', 'qte'},
         'preco_unitario': {'preco_unitario', 'preco', 'preco_unit', 'valor_unitario', 'preco_unitário', 'preco_venda'},
         'receita_total': {'receita_total', 'receita', 'faturamento', 'valor_total', 'total'},
         'produto': {'produto', 'item', 'sku', 'descricao', 'descricao_produto'},
-        'regiao': {'regiao', 'regiao_venda', 'regiao_geografica', 'regiao_', 'regioes', 'regional', 'regiao_cliente'}
+        'regiao': {'regiao', 'regiao_venda', 'regiao_geografica', 'regiao_', 'regioes', 'regional', 'regiao_cliente'},
+        'categoria': {'categoria', 'category', 'grupo', 'segmento', 'classe'}
     }
     current = set(df.columns)
     for canon, alts in alias_map.items():
@@ -84,16 +126,126 @@ def _standardize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             df = df.rename(columns={found[0]: canon})
     return df
 
+
+def _coerce_date_series(s: pd.Series) -> pd.Series:
+    """Converte uma série para datetime de forma robusta:
+    - Strings com dayfirst=True
+    - Números no formato serial do Excel (origin '1899-12-30')
+    - Retorna NaT quando não possível
+    """
+    if s is None or len(s) == 0:
+        return pd.to_datetime(pd.Series([], dtype='datetime64[ns]'))
+    try:
+        # Primeiro tenta converter strings convencionais
+        out = pd.to_datetime(s, dayfirst=True, errors='coerce')
+        # Se taxa de NaT for alta, tenta serial do Excel onde fizer sentido
+        nat_ratio = out.isna().mean()
+        # Identifica valores que parecem números (inclui strings numéricas)
+        numeric_mask = pd.to_numeric(s, errors='coerce').notna()
+        if nat_ratio > 0.5 and numeric_mask.any():
+            excel_nums = pd.to_numeric(s.where(numeric_mask), errors='coerce')
+            # Heurística de faixa comum de seriais do Excel (datas recentes)
+            # 25569 ~ 1970-01-01; 60000 ~ 2064
+            plausible = excel_nums.between(20000, 80000)
+            if plausible.any():
+                alt = pd.to_datetime(excel_nums.where(plausible), unit='D', origin='1899-12-30', errors='coerce')
+                out = out.combine_first(alt)
+        return out
+    except Exception:
+        # fallback bruto
+        return pd.to_datetime(s, errors='coerce')
+
+
+def _ensure_date_column(df: pd.DataFrame) -> pd.DataFrame:
+    """Garante que exista uma coluna 'data'. Se não houver, tenta detectar a melhor candidata e cria 'data'."""
+    if df is None or df.empty:
+        return df
+    if 'data' in df.columns:
+        df['data'] = _coerce_date_series(df['data'])
+        return df
+    # Tenta detectar coluna de data por taxa de parse
+    best_col = None
+    best_ratio = 0.0
+    for c in df.columns:
+        try:
+            parsed = _coerce_date_series(df[c])
+            ratio = parsed.notna().mean()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_col = c
+        except Exception:
+            continue
+    if best_col and best_ratio >= 0.6:
+        df['data'] = _coerce_date_series(df[best_col])
+    return df
+
 def _clean_numeric_series(s: pd.Series) -> pd.Series:
-    # Remove separadores de milhar comuns e padroniza decimal para ponto
-    return pd.to_numeric(
-        s.astype(str)
-         .str.replace('\u00A0', '', regex=False)  # NBSP
-         .str.replace(' ', '', regex=False)
-         .str.replace('.', '', regex=False)
-         .str.replace(',', '.', regex=False),
-        errors='coerce'
-    )
+    """Normaliza números de forma elemento a elemento para evitar inflar valores.
+    Regras:
+    - Se já for dtype numérico, retorna como está.
+    - Remove moeda/símbolos (ex.: R$, %), NBSP e espaços.
+    - Se a string tiver vírgula, trata como BR (',' decimal): remove pontos de milhar e troca vírgula por ponto.
+    - Caso contrário, mantém '.' como decimal.
+    """
+    try:
+        from pandas.api.types import is_numeric_dtype
+    except Exception:
+        is_numeric_dtype = lambda x: False  # fallback
+
+    if is_numeric_dtype(s):
+        return s
+    def _parse(x: object) -> float:
+        if x is None:
+            return float('nan')
+        sx = str(x).strip()
+        # remove moeda/símbolos, mantendo apenas dígitos, sinais e separadores
+        sx = re.sub(r"[^0-9,\.-]", "", sx)
+        sx = sx.replace('\u00A0', '').replace(' ', '')
+        if sx == '' or sx in {'-', '.', ','}:
+            return float('nan')
+        # Se contém vírgula, tratamos como BR
+        if ',' in sx:
+            sx = sx.replace('.', '')  # remove milhar
+            sx = sx.replace(',', '.')
+        # Caso contrário, assume '.' como decimal
+        try:
+            return float(sx)
+        except Exception:
+            return float('nan')
+
+    return s.map(_parse)
+
+def _drop_total_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove linhas de totais agregados baseadas em texto 'total' nas colunas de texto."""
+    if df is None or df.empty:
+        return df
+    str_cols = [c for c in df.columns if df[c].dtype == 'object']
+    if not str_cols:
+        return df
+    pat = re.compile(r"^\s*totais?$|^\s*total\b", re.IGNORECASE)
+    mask = pd.Series(False, index=df.index)
+    for c in str_cols:
+        try:
+            mask = mask | df[c].astype(str).str.match(pat)
+        except Exception:
+            continue
+    return df[~mask]
+
+def _deduplicate_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
+    """Remove duplicatas com base em chaves preferenciais; retorna (df, removidos)."""
+    if df is None or df.empty:
+        return df, 0
+    before = len(df)
+    id_candidates = [
+        'id', 'pedido_id', 'order_id', 'nota_id', 'invoice_id', 'id_pedido', 'id_nota', 'id_venda'
+    ]
+    key_cols = [c for c in id_candidates if c in df.columns]
+    if not key_cols:
+        key_cols = [c for c in ['data', 'produto', 'quantidade', 'preco_unitario', 'receita_total'] if c in df.columns]
+    subset = key_cols if key_cols else df.columns.tolist()
+    deduped = df.drop_duplicates(subset=subset, keep='first', ignore_index=True)
+    removed = before - len(deduped)
+    return deduped, removed
 
 def _prepare_analysis_payload(df: pd.DataFrame, max_rows: int = 1000) -> Tuple[str, str]:
     """Retorna (resumo_textual, csv_amostra) para enviar ao LLM."""
@@ -179,6 +331,7 @@ def load_sales_data(_drive_folder_id):
     all_data = []
     loaded_files: List[Dict[str, str]] = []
     unsupported_files: List[str] = []
+    aggregated_tabs_skipped = 0
     
     with st.spinner("Buscando planilhas na sua pasta do Google Drive..."):
         try:
@@ -191,13 +344,14 @@ def load_sales_data(_drive_folder_id):
             items: List[Dict] = []
             page_token = None
             while True:
-                results = drive_service.files().list(
+                req = drive_service.files().list(
                     q=query,
                     fields="nextPageToken, files(id, name, mimeType)",
                     pageToken=page_token,
                     includeItemsFromAllDrives=True,
                     supportsAllDrives=True
-                ).execute()
+                )
+                results = _execute_request_with_retries(req, max_retries=3)
                 items.extend(results.get('files', []))
                 page_token = results.get('nextPageToken')
                 if not page_token:
@@ -224,19 +378,27 @@ def load_sales_data(_drive_folder_id):
 
                     if mime_type == 'application/vnd.google-apps.spreadsheet':
                         # Lê TODAS as abas (sheets) da planilha e concatena
-                        meta = sheets_service.spreadsheets().get(spreadsheetId=file_id, fields='sheets(properties(title))').execute()
+                        meta_req = sheets_service.spreadsheets().get(spreadsheetId=file_id, fields='sheets(properties(title))')
+                        meta = _execute_request_with_retries(meta_req, max_retries=3)
                         sheet_titles = [s['properties']['title'] for s in meta.get('sheets', [])]
+                        # ignora abas agregadas por padrão
+                        skip_pat = re.compile(r"^(resumo|dashboard|consolidado|grafico|gr[aá]fico|summary|pivot|totais?)$", re.IGNORECASE)
+                        orig_count = len(sheet_titles)
+                        sheet_titles = [t for t in sheet_titles if not re.match(skip_pat, str(t).strip())]
+                        aggregated_tabs_skipped += max(0, orig_count - len(sheet_titles))
                         sub_frames = []
                         for title in sheet_titles:
                             try:
                                 rng = f"{title}!A1:ZZZ"  # evita truncar colunas
-                                result = sheets_service.spreadsheets().values().get(spreadsheetId=file_id, range=rng).execute()
+                                vreq = sheets_service.spreadsheets().values().get(spreadsheetId=file_id, range=rng)
+                                result = _execute_request_with_retries(vreq, max_retries=3)
                                 values = result.get('values', [])
                                 if not values or len(values) < 2:
                                     continue
                                 headers = values[0]
                                 tmp = pd.DataFrame(values[1:], columns=headers)
                                 tmp = _standardize_dataframe(tmp)
+                                tmp['source_sheet'] = title
                                 sub_frames.append(tmp)
                             except Exception:
                                 continue
@@ -247,8 +409,7 @@ def load_sales_data(_drive_folder_id):
 
                     elif mime_type == 'text/csv':
                         # --- INÍCIO DA LÓGICA FLEXÍVEL DE LEITURA ---
-                        request = drive_service.files().get_media(fileId=file_id)
-                        csv_content_bytes = request.execute()
+                        csv_content_bytes = _download_drive_file_bytes(drive_service, file_id)
 
                         detected_delimiter = ','  # Padrão
                         detected_decimal = '.'    # Padrão
@@ -295,17 +456,22 @@ def load_sales_data(_drive_folder_id):
                             unsupported_files.append(file_name)
                             df = None
                         else:
-                            request = drive_service.files().get_media(fileId=file_id)
-                            xlsx_bytes = request.execute()
+                            xlsx_bytes = _download_drive_file_bytes(drive_service, file_id)
                             xlsbio = io.BytesIO(xlsx_bytes)
                             # Lê todas as abas
                             try:
                                 xls = pd.ExcelFile(xlsbio, engine='openpyxl')
                                 sub_frames = []
+                                skip_pat = re.compile(r"^(resumo|dashboard|consolidado|grafico|gr[aá]fico|summary|pivot|totais?)$", re.IGNORECASE)
+                                orig_count = len(xls.sheet_names)
                                 for sheet in xls.sheet_names:
+                                    if re.match(skip_pat, str(sheet).strip()):
+                                        continue
                                     tmp = pd.read_excel(xls, sheet_name=sheet, engine='openpyxl')
                                     tmp = _standardize_dataframe(tmp)
+                                    tmp['source_sheet'] = sheet
                                     sub_frames.append(tmp)
+                                aggregated_tabs_skipped += max(0, orig_count - len(sub_frames))
                                 df = pd.concat(sub_frames, ignore_index=True) if sub_frames else None
                             except Exception as e:
                                 st.error(f"Erro ao ler XLSX '{file_name}': {e}")
@@ -313,13 +479,14 @@ def load_sales_data(_drive_folder_id):
 
                     if df is not None:
                         df = _standardize_dataframe(df)
-                        # Tratamento de datas e numéricos
-                        if 'data' in df.columns:
-                            df['data'] = pd.to_datetime(df['data'], dayfirst=True, errors='coerce')
+                        # Remover linhas de totais
+                        df = _drop_total_rows(df)
+                        # Garantir/Tratar coluna de data
+                        df = _ensure_date_column(df)
                         for col in ['quantidade', 'preco_unitario', 'receita_total']:
                             if col in df.columns:
                                 df[col] = _clean_numeric_series(df[col])
-                        # Marcar origem do arquivo para permitir filtro por arquivo
+                        # Marcar origem
                         df['source_file'] = file_name
                         all_data.append(df)
                         loaded_files.append({"name": file_name, "id": file_id, "mimeType": mime_type, "rows": len(df)})
@@ -340,8 +507,8 @@ def load_sales_data(_drive_folder_id):
             consolidated_df = pd.concat(all_data, ignore_index=True)
             # Garante colunas em padrão canônico
             consolidated_df = _standardize_dataframe(consolidated_df)
-            if 'data' in consolidated_df.columns:
-                consolidated_df['data'] = pd.to_datetime(consolidated_df['data'], dayfirst=True, errors='coerce')
+            # Garantir/Tratar coluna de data consolidada
+            consolidated_df = _ensure_date_column(consolidated_df)
             for col in ['quantidade', 'preco_unitario', 'receita_total']:
                 if col in consolidated_df.columns:
                     consolidated_df[col] = _clean_numeric_series(consolidated_df[col])
@@ -349,8 +516,20 @@ def load_sales_data(_drive_folder_id):
             if 'receita_total' not in consolidated_df.columns and {'quantidade','preco_unitario'}.issubset(consolidated_df.columns):
                 consolidated_df['receita_total'] = consolidated_df['quantidade'] * consolidated_df['preco_unitario']
 
+            # Remover totais e deduplicar
+            consolidated_df = _drop_total_rows(consolidated_df)
+            rows_before_dedup = len(consolidated_df)
+            consolidated_df, dedup_removed = _deduplicate_dataframe(consolidated_df)
+
             elapsed = time.time() - start_ts
-            stats = {"file_count": len(items), "row_count": len(consolidated_df), "load_seconds": elapsed}
+            stats = {
+                "file_count": len(items),
+                "row_count": len(consolidated_df),
+                "load_seconds": elapsed,
+                "rows_before_dedup": rows_before_dedup,
+                "dedup_removed": dedup_removed,
+                "aggregated_tabs_skipped": aggregated_tabs_skipped,
+            }
             counts = Counter([it.get('mimeType') for it in items])
             drive_info = {"folder_id": _drive_folder_id, "counts_by_mime": dict(counts), "unsupported": unsupported_files}
             return consolidated_df, loaded_files, stats, drive_info
@@ -392,6 +571,186 @@ def get_gemini_analysis(user_query, sales_df, model_name: str = 'models/gemini-2
         return response.text
     except Exception as e:
         return f"Desculpe, ocorreu um erro ao contatar o serviço de IA: {e}"
+
+
+# ============== Planner → Executor para perguntas complexas ==============
+def _build_data_catalog(df: pd.DataFrame) -> Dict[str, Any]:
+    """Gera um catálogo simples de dados: colunas, tipos, métricas/dimensões candidatas e intervalos."""
+    catalog: Dict[str, Any] = {
+        "columns": [],
+        "metrics": [],
+        "dimensions": [],
+    }
+    if df is None or df.empty:
+        return catalog
+    for c in df.columns:
+        dtype = str(df[c].dtype)
+        col_info = {"name": c, "dtype": dtype}
+        if c == 'data':
+            try:
+                col_info["min"] = str(pd.to_datetime(df[c], errors='coerce').min())
+                col_info["max"] = str(pd.to_datetime(df[c], errors='coerce').max())
+            except Exception:
+                pass
+        elif pd.api.types.is_numeric_dtype(df[c]):
+            try:
+                col_info["min"] = float(pd.to_numeric(df[c], errors='coerce').min())
+                col_info["max"] = float(pd.to_numeric(df[c], errors='coerce').max())
+                col_info["sum"] = float(pd.to_numeric(df[c], errors='coerce').sum())
+            except Exception:
+                pass
+        catalog["columns"].append(col_info)
+        # Heurística de métricas e dimensões
+        if pd.api.types.is_numeric_dtype(df[c]) or c in {"quantidade", "preco_unitario", "receita_total"}:
+            catalog["metrics"].append(c)
+        else:
+            catalog["dimensions"].append(c)
+    # Marcação de chaves/identificadores comuns
+    catalog["identifiers"] = [c for c in df.columns if c in [
+        'id','pedido_id','order_id','nota_id','invoice_id','id_pedido','id_nota','id_venda']]
+    return catalog
+
+
+def _plan_with_llm(user_query: str, catalog: Dict[str, Any], model_name: str) -> Dict[str, Any]:
+    """Solicita ao LLM um plano em JSON para executar sobre pandas. Retorna dicionário já parseado."""
+    system = (
+        "Você é um planejador de consultas tabulares. Produza SOMENTE um JSON válido que descreva um plano de análise sobre um DataFrame pandas. "
+        "Não inclua comentários, markdown ou texto fora do JSON. Se não houver dados suficientes, retorne {\"error\": \"mensagem\"}."
+    )
+    schema_hint = {
+        "filters": {"date_range": ["YYYY-MM-DD","YYYY-MM-DD"], "equals": {"coluna": ["valor1","valor2"]}},
+        "groupby": ["coluna1","coluna2"],
+        "metrics": [{"name": "receita_total", "agg": "sum"}],
+        "sort": {"by": "receita_total", "ascending": False},
+        "limit": 50
+    }
+    prompt = f"""
+    CATÁLOGO DE DADOS (JSON):
+    {json.dumps(catalog, ensure_ascii=False)}
+
+    Esquematize um plano JSON para responder: {user_query}
+    Use o seguinte formato de plano:
+    {json.dumps(schema_hint, ensure_ascii=False)}
+    Apenas colunas existentes no catálogo. Priorize métricas ['receita_total','quantidade','preco_unitario'] quando fizer sentido.
+    """
+    try:
+        model = genai.GenerativeModel(model_name)
+        resp = model.generate_content([system, prompt])
+        text = resp.text or "{}"
+        # Tente extrair JSON puro
+        text_stripped = text.strip()
+        if text_stripped.startswith("```) ") and text_stripped.endswith("```"):
+            # fallback tosco caso venha em bloco, removendo crases
+            text_stripped = text_stripped.strip('`')
+        # Encontrar primeira/última chave
+        first = text_stripped.find('{')
+        last = text_stripped.rfind('}')
+        if first >= 0 and last >= 0:
+            text_stripped = text_stripped[first:last+1]
+        plan = json.loads(text_stripped)
+        if not isinstance(plan, dict):
+            return {"error": "Plano não é um objeto JSON."}
+        return plan
+    except Exception as e:
+        return {"error": f"Falha ao planejar com LLM: {e}"}
+
+
+def _execute_plan(df: pd.DataFrame, plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Executa um plano simples sobre um DataFrame usando pandas. Retorna dict com 'table' e 'summary'."""
+    result: Dict[str, Any] = {"table": pd.DataFrame(), "summary": ""}
+    if df is None or df.empty:
+        result["summary"] = "Sem dados para executar o plano."
+        return result
+    work = df.copy()
+    # filtros por intervalo de data
+    try:
+        filters = plan.get("filters", {}) if isinstance(plan, dict) else {}
+        if 'date_range' in filters and 'data' in work.columns:
+            ini, fim = filters['date_range']
+            ini_dt = pd.to_datetime(ini, errors='coerce')
+            fim_dt = pd.to_datetime(fim, errors='coerce')
+            if pd.notna(ini_dt) and pd.notna(fim_dt):
+                work = work[(work['data'] >= ini_dt) & (work['data'] <= fim_dt)]
+        # equals
+        equals = filters.get('equals', {}) if isinstance(filters, dict) else {}
+        for col, vals in equals.items():
+            if col in work.columns:
+                work = work[work[col].astype(str).isin([str(v) for v in vals])]
+    except Exception:
+        pass
+    # derivar receita_total se preciso
+    if 'receita_total' not in work.columns and {'quantidade','preco_unitario'}.issubset(work.columns):
+        work['receita_total'] = work['quantidade'] * work['preco_unitario']
+    # groupby + metrics
+    groupby = plan.get('groupby', []) if isinstance(plan, dict) else []
+    metrics = plan.get('metrics', []) if isinstance(plan, dict) else []
+    agg_spec: Dict[str, str] = {}
+    for m in metrics:
+        if isinstance(m, dict) and m.get('name') in work.columns:
+            agg_spec[m['name']] = m.get('agg','sum')
+        elif isinstance(m, str) and m in work.columns:
+            agg_spec[m] = 'sum'
+    table = pd.DataFrame()
+    try:
+        if groupby and agg_spec:
+            table = work.groupby(groupby).agg(agg_spec).reset_index()
+        elif agg_spec:
+            table = work.agg(agg_spec).to_frame().T
+        else:
+            table = work.head(50)
+    except Exception:
+        table = work.head(50)
+    # sort/limit
+    try:
+        sort = plan.get('sort', {}) if isinstance(plan, dict) else {}
+        if sort and sort.get('by') in table.columns:
+            table = table.sort_values(by=sort['by'], ascending=bool(sort.get('ascending', False)))
+        limit = int(plan.get('limit', 50))
+        table = table.head(limit)
+    except Exception:
+        pass
+    # resumo rápido
+    try:
+        lines = [f"Linhas retornadas: {len(table)}"]
+        if 'receita_total' in work.columns:
+            lines.append(f"Receita total no filtro: {_fmt_brl(float(work['receita_total'].sum()))}")
+        if 'quantidade' in work.columns:
+            lines.append(f"Quantidade total no filtro: {int(pd.to_numeric(work['quantidade'], errors='coerce').sum())}")
+        result['summary'] = " | ".join(lines)
+    except Exception:
+        result['summary'] = f"Linhas retornadas: {len(table)}"
+    result['table'] = table
+    return result
+
+
+def _narrate_results_with_llm(user_query: str, plan: Dict[str, Any], exec_res: Dict[str, Any], model_name: str) -> str:
+    """Gera uma resposta em linguagem natural usando o LLM baseada no resultado do Planner→Executor."""
+    try:
+        table: pd.DataFrame = exec_res.get('table', pd.DataFrame())
+        summary: str = exec_res.get('summary', '')
+        sample_csv = table.head(100).to_csv(index=False) if isinstance(table, pd.DataFrame) and not table.empty else ''
+        plan_json = json.dumps(plan, ensure_ascii=False)
+        prompt = f"""
+        Você é o AlphaBot, analista de vendas. Responda de forma direta, em português, com base SOMENTE nos dados fornecidos abaixo. 
+        Formate valores monetários como R$ X.XXX,XX e inclua comparações, variações percentuais e insights executivos quando aplicável.
+
+        PERGUNTA DO USUÁRIO:
+        {user_query}
+
+        CONTEXTO E RESULTADOS DISPONÍVEIS:
+        - Plano de execução (JSON): {plan_json}
+        - Resumo do resultado: {summary}
+        - Tabela resultante (amostra até 100 linhas, CSV):
+        {sample_csv}
+
+        Gere uma resposta clara e objetiva, usando apenas o que está acima. Se algo não estiver nas colunas/linhas, diga que não está disponível.
+        """
+        model = genai.GenerativeModel(model_name)
+        response = model.generate_content(prompt)
+        return response.text or summary or "Não há informações suficientes para responder."
+    except Exception as e:
+        # Fallback para pelo menos devolver o resumo
+        return f"(Não foi possível gerar a narrativa do LLM: {e})\n{exec_res.get('summary', '')}"
 
 # --- Interface do Usuário com Streamlit ---
 st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="wide", initial_sidebar_state="expanded")
@@ -467,22 +826,12 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-    # 2) Filtros (sem filtros ativados por padrão)
+    # 2) Filtros (removido filtro por data; mantemos produtos e regiões)
     st.divider()
     st.subheader("Filtros")
     filter_info = {}
     if not sales_data_df.empty:
-        df_for_filters = sales_data_df  # base completa; seleção de arquivos virá depois
-        # Período (desativado por padrão)
-        if 'data' in df_for_filters.columns:
-            enable_date = st.checkbox("Filtrar por período", value=False, key='enable_date_filter')
-            if enable_date:
-                min_date = pd.to_datetime(df_for_filters['data'], errors='coerce').min()
-                max_date = pd.to_datetime(df_for_filters['data'], errors='coerce').max()
-                if pd.notna(min_date) and pd.notna(max_date):
-                    start_d = st.date_input("Início", value=min_date.date(), key='f_ini')
-                    end_d = st.date_input("Fim", value=max_date.date(), key='f_fim')
-                    filter_info['date_range'] = (start_d, end_d)
+        df_for_filters = sales_data_df
         # Produtos (vazio por padrão)
         if 'produto' in df_for_filters.columns:
             prods = sorted([p for p in df_for_filters['produto'].dropna().astype(str).unique()][:5000])
@@ -525,6 +874,11 @@ with st.sidebar:
     st.write(f"Arquivos encontrados: {load_stats.get('file_count', 0)}")
     st.write(f"Linhas consolidadas: {load_stats.get('row_count', 0)}")
     st.write(f"Tempo de carga: {load_stats.get('load_seconds', 0):.2f}s")
+    # métricas extras
+    if 'rows_before_dedup' in load_stats and 'dedup_removed' in load_stats:
+        st.caption(f"Antes da dedup: {load_stats.get('rows_before_dedup', 0)} | Removidas: {load_stats.get('dedup_removed', 0)}")
+    if 'aggregated_tabs_skipped' in load_stats:
+        st.caption(f"Abas agregadas ignoradas: {load_stats.get('aggregated_tabs_skipped', 0)}")
 
 def _apply_filters(df: pd.DataFrame, selected_files: List[str], filter_info: Dict) -> pd.DataFrame:
     if df is None or df.empty:
@@ -533,10 +887,6 @@ def _apply_filters(df: pd.DataFrame, selected_files: List[str], filter_info: Dic
     if selected_files and 'source_file' in out.columns:
         out = out[out['source_file'].isin(selected_files)]
     if filter_info:
-        # período
-        if 'date_range' in filter_info and 'data' in out.columns:
-            ini, fim = filter_info['date_range']
-            out = out[(out['data'].dt.date >= ini) & (out['data'].dt.date <= fim)]
         # produto
         if 'produtos' in filter_info and 'produto' in out.columns and filter_info['produtos']:
             out = out[out['produto'].astype(str).isin(filter_info['produtos'])]
@@ -576,7 +926,15 @@ if not sales_data_df.empty:
     if 'data' in filtered_df.columns:
         try:
             min_dt = filtered_df['data'].min(); max_dt = filtered_df['data'].max()
-            st.caption(f"Período filtrado: {min_dt.date() if pd.notna(min_dt) else '?'} a {max_dt.date() if pd.notna(max_dt) else '?'}")
+            st.caption(f"Período nos dados: {min_dt.date() if pd.notna(min_dt) else '?'} a {max_dt.date() if pd.notna(max_dt) else '?'}")
+        except Exception:
+            pass
+    # Aviso sobre linhas sem data
+    if 'data' in filtered_df.columns:
+        try:
+            invalid_dates = int(filtered_df['data'].isna().sum())
+            if invalid_dates > 0:
+                st.caption(f"Aviso: {invalid_dates} linhas sem data válida estão incluídas.")
         except Exception:
             pass
     if 'produto' in filtered_df.columns:
@@ -597,6 +955,26 @@ if not sales_data_df.empty:
         file_name="vendas_consolidado.csv",
         mime="text/csv"
     )
+
+    # Diagnóstico de datas
+    with st.expander("Diagnóstico de datas e período"):
+        total_lin = len(sales_data_df)
+        valid_dates = sales_data_df['data'].notna().sum() if 'data' in sales_data_df.columns else 0
+        st.write(f"Linhas totais: {total_lin}")
+        st.write(f"Linhas com data válida: {valid_dates}")
+        # Receita por mês (antes e depois do filtro)
+        try:
+            if 'data' in sales_data_df.columns:
+                base = sales_data_df.dropna(subset=['data']).assign(mes=lambda x: x['data'].dt.to_period('M').astype(str))
+                rcol = 'receita_total' if 'receita_total' in base.columns else None
+                if not rcol and {'quantidade','preco_unitario'}.issubset(base.columns):
+                    base['receita_total'] = base['quantidade'] * base['preco_unitario']
+                    rcol = 'receita_total'
+                if rcol:
+                    st.write("Receita por mês (todas as linhas com data válida):")
+                    st.dataframe(base.groupby('mes')[rcol].sum().reset_index().sort_values('mes'), use_container_width=True)
+        except Exception:
+            pass
     
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -612,24 +990,39 @@ if not sales_data_df.empty:
 
         with st.chat_message("assistant"):
             with st.spinner("Analisando os dados..."):
-                # Prepara um resumo e amostra para reduzir payload ao LLM
-                resumo, csv_amostra = _prepare_analysis_payload(filtered_df, max_rows=1000)
-                # Monta prompt compacto com resumo + amostra
-                compact_query = f"""
-                CONTEXTO: Abaixo há um resumo estatístico dos dados de vendas e uma amostra de linhas.
-                Use APENAS essas informações para responder. Caso precise de algo fora disso, diga que não está disponível.
+                # 1) Tenta Planner→Executor
+                catalog = _build_data_catalog(filtered_df)
+                plan = _plan_with_llm(user_query, catalog, model_name=st.session_state.get("model_name", 'models/gemini-2.5-pro'))
+                used_planner = False
+                final_text = ""
+                if isinstance(plan, dict) and not plan.get('error'):
+                    used_planner = True
+                    exec_res = _execute_plan(filtered_df, plan)
+                    # Não exibimos a tabela; apenas geramos a narrativa baseada no resultado interno
+                    final_text = _narrate_results_with_llm(
+                        user_query=user_query,
+                        plan=plan,
+                        exec_res=exec_res,
+                        model_name=st.session_state.get("model_name", 'models/gemini-2.5-pro')
+                    )
+                # 2) Fallback: resumo + amostra para o LLM
+                if not used_planner:
+                    resumo, csv_amostra = _prepare_analysis_payload(filtered_df, max_rows=1000)
+                    compact_query = f"""
+                    CONTEXTO: Abaixo há um resumo estatístico dos dados de vendas e uma amostra de linhas.
+                    Use APENAS essas informações para responder. Caso precise de algo fora disso, diga que não está disponível.
 
-                RESUMO DOS DADOS
-                {resumo}
+                    RESUMO DOS DADOS
+                    {resumo}
 
-                AMOSTRA (CSV - até 1000 linhas)
-                {csv_amostra}
+                    AMOSTRA (CSV - até 1000 linhas)
+                    {csv_amostra}
 
-                PERGUNTA DO USUÁRIO
-                {user_query}
-                """
-                response = get_gemini_analysis(compact_query, filtered_df, model_name=st.session_state.get("model_name", 'models/gemini-2.5-pro'))
-                st.markdown(response)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+                    PERGUNTA DO USUÁRIO
+                    {user_query}
+                    """
+                    final_text = get_gemini_analysis(compact_query, filtered_df, model_name=st.session_state.get("model_name", 'models/gemini-2.5-pro'))
+                st.markdown(final_text)
+            st.session_state.messages.append({"role": "assistant", "content": final_text})
 else:
     st.error("Não foi possível carregar os dados de vendas. Verifique as configurações e a estrutura das planilhas.")       
