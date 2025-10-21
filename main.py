@@ -23,7 +23,7 @@ except Exception:
 
 # Tenta carregar as configurações do arquivo config.py
 try:
-    from config import GOOGLE_SERVICE_ACCOUNT_CREDENTIALS_PATH, GOOGLE_DRIVE_FOLDER_ID, GEMINI_API_KEY
+    from config import GOOGLE_DRIVE_FOLDER_ID, GEMINI_API_KEY
 except ImportError:
     st.error("Erro: Arquivo config.py não encontrado. Certifique-se de que ele existe e está configurado corretamente.")
     st.stop()
@@ -40,8 +40,12 @@ except Exception as e:
 def get_google_apis_services():
     """Autentica com as APIs do Google usando a conta de serviço."""
     try:
-        creds = service_account.Credentials.from_service_account_file(
-            GOOGLE_SERVICE_ACCOUNT_CREDENTIALS_PATH,
+        # Obtém credenciais como dict (JSON ou arquivo)
+        creds_dict = config.get_google_service_account_credentials()
+        
+        # Cria credenciais a partir do dict
+        creds = service_account.Credentials.from_service_account_info(
+            creds_dict,
             scopes=['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/spreadsheets.readonly']
         )
         sheets_service = build('sheets', 'v4', credentials=creds)

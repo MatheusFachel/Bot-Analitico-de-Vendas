@@ -292,14 +292,75 @@ $ source .venv/bin/activate
 
 ## ⚙️ Configuração detalhada
 
+### Credenciais do Google Service Account
+
+O bot suporta **dois métodos** para fornecer as credenciais:
+
+#### Método 1: JSON completo (recomendado para Streamlit Cloud)
+
+Use a variável `GOOGLE_SERVICE_ACCOUNT_CREDENTIALS` com o JSON completo:
+
+**`.streamlit/secrets.toml`:**
+```toml
+GOOGLE_SERVICE_ACCOUNT_CREDENTIALS = """
+{
+  "type": "service_account",
+  "project_id": "seu-projeto-id",
+  "private_key_id": "abc123...",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_email": "alphabot@seu-projeto.iam.gserviceaccount.com",
+  "client_id": "123456789",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/..."
+}
+"""
+```
+
+**Arquivo `.env`:**
+```env
+GOOGLE_SERVICE_ACCOUNT_CREDENTIALS='{"type":"service_account","project_id":"seu-projeto",...}'
+```
+
+#### Método 2: Caminho do arquivo (recomendado para desenvolvimento local)
+
+Use a variável `GOOGLE_SERVICE_ACCOUNT_CREDENTIALS_PATH` com o caminho do arquivo:
+
+**`.streamlit/secrets.toml`:**
+```toml
+GOOGLE_SERVICE_ACCOUNT_CREDENTIALS_PATH = "credentials/service_account.json"
+```
+
+**Arquivo `.env`:**
+```env
+GOOGLE_SERVICE_ACCOUNT_CREDENTIALS_PATH=credentials/service_account.json
+```
+
+**Windows PowerShell:**
+```powershell
+$env:GOOGLE_SERVICE_ACCOUNT_CREDENTIALS_PATH = "C:\Users\SEU_USER\Desktop\Bot-Analitico-de-Vendas\credentials\service_account.json"
+```
+
+**Linux/macOS:**
+```bash
+export GOOGLE_SERVICE_ACCOUNT_CREDENTIALS_PATH="/home/seu_user/Bot-Analitico-de-Vendas/credentials/service_account.json"
+```
+
+---
+
 ### Opção A: Streamlit Secrets (recomendado para desenvolvimento local)
 
 Crie o arquivo `.streamlit/secrets.toml`:
 
 ```toml
-[general]
+# API do Gemini
 GEMINI_API_KEY = "AIzaSyD..."
+
+# ID da pasta do Google Drive
 GOOGLE_DRIVE_FOLDER_ID = "1a2B3c4D5e6F7g8H9i0J"
+
+# Credenciais (escolha UM dos dois métodos acima)
 GOOGLE_SERVICE_ACCOUNT_CREDENTIALS_PATH = "credentials/service_account.json"
 ```
 
@@ -604,30 +665,41 @@ Regras suportadas (base):
 
 ### Passo 3: Configurar Secrets
 
-1. Na dashboard do app, vá em "Settings" → "Secrets"
-2. Cole o conteúdo do seu `.streamlit/secrets.toml`:
-   ```toml
-   [general]
-   GEMINI_API_KEY = "sua_api_key"
-   GOOGLE_DRIVE_FOLDER_ID = "id_da_pasta"
-   GOOGLE_SERVICE_ACCOUNT_CREDENTIALS = '''
-   {
-     "type": "service_account",
-     "project_id": "seu-projeto",
-     "private_key_id": "...",
-     "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
-     "client_email": "alphabot@seu-projeto.iam.gserviceaccount.com",
-     ...
-   }
-   '''
-   ```
+No Streamlit Cloud, credenciais são configuradas via interface web (não arquivos).
 
-3. Ajuste `config.py` para ler credentials do secrets diretamente (não de arquivo):
-   ```python
-   import json
-   creds_dict = json.loads(st.secrets["general"]["GOOGLE_SERVICE_ACCOUNT_CREDENTIALS"])
-   creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=[...])
-   ```
+1. Na dashboard do app, vá em **Settings** → **Secrets**
+2. Cole o conteúdo abaixo, substituindo pelos seus valores reais:
+
+```toml
+# --- API KEY DO GEMINI ---
+GEMINI_API_KEY = "AIza..."
+
+# --- ID DA PASTA DO GOOGLE DRIVE ---
+GOOGLE_DRIVE_FOLDER_ID = "1AbC2dEf3GhI..."
+
+# --- CREDENCIAIS DO GOOGLE SERVICE ACCOUNT (JSON completo) ---
+# Abra seu arquivo service_account.json, copie TODO o conteúdo e cole entre as aspas triplas abaixo
+GOOGLE_SERVICE_ACCOUNT_CREDENTIALS = """
+{
+  "type": "service_account",
+  "project_id": "seu-projeto-id",
+  "private_key_id": "abc123...",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nSUA_CHAVE_PRIVADA_COMPLETA\n-----END PRIVATE KEY-----\n",
+  "client_email": "alphabot@seu-projeto.iam.gserviceaccount.com",
+  "client_id": "123456789",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/..."
+}
+"""
+```
+
+**⚠️ Importante:**
+- **NÃO** use `GOOGLE_SERVICE_ACCOUNT_CREDENTIALS_PATH` no Cloud (caminhos de arquivo não funcionam)
+- Copie o JSON **completo** do seu arquivo `service_account.json`
+- Mantenha a formatação JSON intacta (chaves, vírgulas, quebras de linha)
+- As aspas triplas (`"""`) são obrigatórias para textos multilinha no TOML
 
 ### Passo 4: Deploy
 
