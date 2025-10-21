@@ -773,6 +773,8 @@ st.markdown(
             inset 0 0 15px rgba(255,23,68,0.1) !important;
         background: linear-gradient(145deg, #1a1a1a, #2d2d2d) !important;
         animation: pulse-glow 2s ease-in-out infinite alternate !important;
+        max-width: 75% !important;
+        margin: 0 auto !important;
     }
     
     @keyframes pulse-glow {
