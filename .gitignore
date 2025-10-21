@@ -6,7 +6,8 @@ venv/
 
 # Arquivos de Credenciais (Super secretos!)
 credentials/service_account.json
-config.py
+# NOTA: config.py NÃO está aqui porque ele só contém CÓDIGO (não dados sensíveis)
+# Os dados sensíveis ficam em: .streamlit/secrets.toml, .env, ou variáveis de ambiente
 
 # Cache do Python
 __pycache__/
