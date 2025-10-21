@@ -764,13 +764,13 @@ st.markdown(
     <style>
     /* Destaque MUITO visível na barra de conversa */
     .stChatFloatingInputContainer, .stChatInputContainer { 
-        border: 3px solid #ff1744 !important; 
+        border: 3px solid #00C851 !important; 
         border-radius: 15px !important;
         box-shadow: 
-            0 0 15px rgba(255,23,68,0.6) !important,
-            0 0 30px rgba(255,23,68,0.4) !important,
-            0 0 60px rgba(255,23,68,0.2) !important,
-            inset 0 0 15px rgba(255,23,68,0.1) !important;
+            0 0 15px rgba(0,200,81,0.6) !important,
+            0 0 30px rgba(0,200,81,0.4) !important,
+            0 0 60px rgba(0,200,81,0.2) !important,
+            inset 0 0 15px rgba(0,200,81,0.1) !important;
         background: linear-gradient(145deg, #1a1a1a, #2d2d2d) !important;
         animation: pulse-glow 2s ease-in-out infinite alternate !important;
         max-width: 75% !important;
@@ -804,19 +804,19 @@ st.markdown(
     }
     
     @keyframes pulse-glow {
-        0% { box-shadow: 0 0 15px rgba(255,23,68,0.6), 0 0 30px rgba(255,23,68,0.4), 0 0 60px rgba(255,23,68,0.2); }
-        100% { box-shadow: 0 0 25px rgba(255,23,68,0.8), 0 0 40px rgba(255,23,68,0.6), 0 0 80px rgba(255,23,68,0.3); }
+        0% { box-shadow: 0 0 15px rgba(0,200,81,0.6), 0 0 30px rgba(0,200,81,0.4), 0 0 60px rgba(0,200,81,0.2); }
+        100% { box-shadow: 0 0 25px rgba(0,200,81,0.8), 0 0 40px rgba(0,200,81,0.6), 0 0 80px rgba(0,200,81,0.3); }
     }
     
     .stChatInput > div > div textarea {
         font-size: 1.2rem !important;
         background: transparent !important;
         border: none !important;
-        color: #87CEEB !important;
+        color: #00FF7F !important;
         font-weight: 500 !important;
     }
     .stChatInput > div > div textarea::placeholder {
-        color: #ADD8E6 !important;
+        color: #90EE90 !important;
         opacity: 0.9 !important;
         font-weight: 400 !important;
     }
