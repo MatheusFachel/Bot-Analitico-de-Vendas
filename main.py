@@ -758,7 +758,7 @@ def _narrate_results_with_llm(user_query: str, plan: Dict[str, Any], exec_res: D
         return f"(Não foi possível gerar a narrativa do LLM: {e})\n{exec_res.get('summary', '')}"
 
 # --- Interface do Usuário com Streamlit ---
-st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="wide", initial_sidebar_state="auto")
+st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(
     """
     <style>
@@ -816,16 +816,6 @@ st.markdown(
         margin: .25rem 0; padding: .35rem .5rem; background: #1f2023; border-radius: .35rem;
     }
     section[data-testid="stSidebar"] li small { color: #bbb; }
-    
-    /* Força sidebar a iniciar recolhida */
-    section[data-testid="stSidebar"] {
-        width: 0px !important;
-        min-width: 0px !important;
-    }
-    section[data-testid="stSidebar"][aria-expanded="false"] {
-        width: 0px !important;
-        transform: translateX(-100%) !important;
-    }
     </style>
     """,
     unsafe_allow_html=True,
