@@ -792,6 +792,17 @@ st.markdown(
         margin: 0 auto !important;
     }
     
+    /* Força container geral da área de chat a ser menor */
+    section[data-testid="stMain"] > div > div > div:last-child {
+        max-width: 75% !important;
+        margin: 0 auto !important;
+    }
+    
+    /* Alvo muito específico para o input do chat */
+    div[data-baseweb="input"] {
+        max-width: 100% !important;
+    }
+    
     @keyframes pulse-glow {
         0% { box-shadow: 0 0 15px rgba(255,23,68,0.6), 0 0 30px rgba(255,23,68,0.4), 0 0 60px rgba(255,23,68,0.2); }
         100% { box-shadow: 0 0 25px rgba(255,23,68,0.8), 0 0 40px rgba(255,23,68,0.6), 0 0 80px rgba(255,23,68,0.3); }
