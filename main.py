@@ -23,6 +23,7 @@ except Exception:
 
 # Tenta carregar as configurações do arquivo config.py
 try:
+    import config
     from config import GOOGLE_DRIVE_FOLDER_ID, GEMINI_API_KEY
 except ImportError:
     st.error("Erro: Arquivo config.py não encontrado. Certifique-se de que ele existe e está configurado corretamente.")
