@@ -816,6 +816,28 @@ def get_available_models() -> List[str]:
             'models/gemini-flash-latest',
         ]
 
+# Funções auxiliares para filtros e formatação
+def _apply_filters(df: pd.DataFrame, selected_files: List[str], filter_info: Dict) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df
+    if selected_files and 'source_file' in out.columns:
+        out = out[out['source_file'].isin(selected_files)]
+    if filter_info:
+        # produto
+        if 'produtos' in filter_info and 'produto' in out.columns and filter_info['produtos']:
+            out = out[out['produto'].astype(str).isin(filter_info['produtos'])]
+        # regiao
+        if 'regioes' in filter_info and 'regiao' in out.columns and filter_info['regioes']:
+            out = out[out['regiao'].astype(str).isin(filter_info['regioes'])]
+    return out
+
+def _fmt_brl(v: float) -> str:
+    try:
+        return f"R$ {v:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    except Exception:
+        return "R$ 0,00"
+
 with st.sidebar:
     # 1) Configurações
     st.subheader("Configurações")
@@ -873,7 +895,30 @@ with st.sidebar:
     else:
         st.info("Nenhum arquivo listado ainda.")
 
-    # 4) Resumo da carga (sem diagnóstico)
+    # 4) Dados selecionados (prévia e download)
+    st.divider()
+    st.subheader("Dados selecionados")
+    if not sales_data_df.empty and selected_file_names:
+        # Aplica filtros para mostrar a prévia na sidebar
+        preview_df = _apply_filters(sales_data_df, selected_file_names, filter_info)
+        
+        if not preview_df.empty:
+            with st.expander("Prévia dos dados (25 linhas)"):
+                st.dataframe(preview_df.head(25), use_container_width=True)
+            st.download_button(
+                label="Baixar CSV consolidado",
+                data=preview_df.to_csv(index=False),
+                file_name="vendas_consolidado.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+            st.caption(f"{len(preview_df):,} registros após filtros")
+        else:
+            st.info("Nenhum dado disponível com os filtros atuais")
+    else:
+        st.info("Selecione arquivos para ver os dados")
+
+    # 5) Resumo da carga (sem diagnóstico)
     st.divider()
     st.subheader("Resumo da carga")
     st.write(f"Arquivos encontrados: {load_stats.get('file_count', 0)}")
@@ -884,29 +929,6 @@ with st.sidebar:
         st.caption(f"Antes da dedup: {load_stats.get('rows_before_dedup', 0)} | Removidas: {load_stats.get('dedup_removed', 0)}")
     if 'aggregated_tabs_skipped' in load_stats:
         st.caption(f"Abas agregadas ignoradas: {load_stats.get('aggregated_tabs_skipped', 0)}")
-
-def _apply_filters(df: pd.DataFrame, selected_files: List[str], filter_info: Dict) -> pd.DataFrame:
-    if df is None or df.empty:
-        return df
-    out = df
-    if selected_files and 'source_file' in out.columns:
-        out = out[out['source_file'].isin(selected_files)]
-    if filter_info:
-        # produto
-        if 'produtos' in filter_info and 'produto' in out.columns and filter_info['produtos']:
-            out = out[out['produto'].astype(str).isin(filter_info['produtos'])]
-        # regiao
-        if 'regioes' in filter_info and 'regiao' in out.columns and filter_info['regioes']:
-            out = out[out['regiao'].astype(str).isin(filter_info['regioes'])]
-    return out
-
-
-def _fmt_brl(v: float) -> str:
-    try:
-        return f"R$ {v:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-    except Exception:
-        return "R$ 0,00"
-
 
 if not sales_data_df.empty:
     st.success(f"Dados de {len(sales_data_df)} transações carregados com sucesso!")
@@ -950,34 +972,6 @@ if not sales_data_df.empty:
             )
             if not top_prod.empty:
                 st.caption(f"Top produto: {top_prod.index[0]}")
-        except Exception:
-            pass
-    with st.expander("Prévia dos dados (25 linhas)"):
-        st.dataframe(filtered_df.head(25), use_container_width=True)
-    st.download_button(
-        label="Baixar CSV consolidado",
-        data=filtered_df.to_csv(index=False),
-        file_name="vendas_consolidado.csv",
-        mime="text/csv"
-    )
-
-    # Diagnóstico de datas
-    with st.expander("Diagnóstico de datas e período"):
-        total_lin = len(sales_data_df)
-        valid_dates = sales_data_df['data'].notna().sum() if 'data' in sales_data_df.columns else 0
-        st.write(f"Linhas totais: {total_lin}")
-        st.write(f"Linhas com data válida: {valid_dates}")
-        # Receita por mês (antes e depois do filtro)
-        try:
-            if 'data' in sales_data_df.columns:
-                base = sales_data_df.dropna(subset=['data']).assign(mes=lambda x: x['data'].dt.to_period('M').astype(str))
-                rcol = 'receita_total' if 'receita_total' in base.columns else None
-                if not rcol and {'quantidade','preco_unitario'}.issubset(base.columns):
-                    base['receita_total'] = base['quantidade'] * base['preco_unitario']
-                    rcol = 'receita_total'
-                if rcol:
-                    st.write("Receita por mês (todas as linhas com data válida):")
-                    st.dataframe(base.groupby('mes')[rcol].sum().reset_index().sort_values('mes'), use_container_width=True)
         except Exception:
             pass
     
