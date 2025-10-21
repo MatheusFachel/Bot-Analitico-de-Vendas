@@ -758,17 +758,31 @@ def _narrate_results_with_llm(user_query: str, plan: Dict[str, Any], exec_res: D
         return f"(Não foi possível gerar a narrativa do LLM: {e})\n{exec_res.get('summary', '')}"
 
 # --- Interface do Usuário com Streamlit ---
-st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(
     """
     <style>
-    /* Aumenta contraste e visibilidade do input de chat */
+    /* Destaque sutil na barra de conversa */
     .stChatFloatingInputContainer, .stChatInputContainer { 
-        border: 1px solid #e91e63 !important; 
-        box-shadow: 0 0 10px rgba(233,30,99,0.35);
+        border: 2px solid #e91e63 !important; 
+        border-radius: 12px !important;
+        box-shadow: 0 0 20px rgba(233,30,99,0.4), 0 0 40px rgba(233,30,99,0.2) !important;
+        background: linear-gradient(145deg, #1e1e1e, #2a2a2a) !important;
     }
     .stChatInput > div > div textarea {
-        font-size: 1rem !important;
+        font-size: 1.1rem !important;
+        background: transparent !important;
+        border: none !important;
+        color: #ffffff !important;
+    }
+    .stChatInput > div > div textarea::placeholder {
+        color: #cccccc !important;
+        opacity: 0.8 !important;
+    }
+    /* Área do chat com fundo sutil */
+    .stChatMessage {
+        border-radius: 8px !important;
+        margin: 0.5rem 0 !important;
     }
     /* Sidebar estilizada para lista de arquivos */
     section[data-testid="stSidebar"] .stMarkdown ul {
