@@ -762,28 +762,52 @@ st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="wide", in
 st.markdown(
     """
     <style>
-    /* Destaque sutil na barra de conversa */
+    /* Destaque MUITO visível na barra de conversa */
     .stChatFloatingInputContainer, .stChatInputContainer { 
-        border: 2px solid #e91e63 !important; 
-        border-radius: 12px !important;
-        box-shadow: 0 0 20px rgba(233,30,99,0.4), 0 0 40px rgba(233,30,99,0.2) !important;
-        background: linear-gradient(145deg, #1e1e1e, #2a2a2a) !important;
+        border: 3px solid #ff1744 !important; 
+        border-radius: 15px !important;
+        box-shadow: 
+            0 0 15px rgba(255,23,68,0.6) !important,
+            0 0 30px rgba(255,23,68,0.4) !important,
+            0 0 60px rgba(255,23,68,0.2) !important,
+            inset 0 0 15px rgba(255,23,68,0.1) !important;
+        background: linear-gradient(145deg, #1a1a1a, #2d2d2d) !important;
+        animation: pulse-glow 2s ease-in-out infinite alternate !important;
     }
+    
+    @keyframes pulse-glow {
+        0% { box-shadow: 0 0 15px rgba(255,23,68,0.6), 0 0 30px rgba(255,23,68,0.4), 0 0 60px rgba(255,23,68,0.2); }
+        100% { box-shadow: 0 0 25px rgba(255,23,68,0.8), 0 0 40px rgba(255,23,68,0.6), 0 0 80px rgba(255,23,68,0.3); }
+    }
+    
     .stChatInput > div > div textarea {
-        font-size: 1.1rem !important;
+        font-size: 1.2rem !important;
         background: transparent !important;
         border: none !important;
         color: #ffffff !important;
+        font-weight: 500 !important;
     }
     .stChatInput > div > div textarea::placeholder {
-        color: #cccccc !important;
-        opacity: 0.8 !important;
+        color: #ffaaaa !important;
+        opacity: 0.9 !important;
+        font-weight: 400 !important;
     }
-    /* Área do chat com fundo sutil */
+    
+    /* Área do chat com mais destaque */
     .stChatMessage {
-        border-radius: 8px !important;
-        margin: 0.5rem 0 !important;
+        border-radius: 10px !important;
+        margin: 0.8rem 0 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
     }
+    
+    /* Botão de envio com neon */
+    button[data-testid="chatSubmitButton"] {
+        background: linear-gradient(145deg, #ff1744, #d50000) !important;
+        border: none !important;
+        border-radius: 50% !important;
+        box-shadow: 0 0 15px rgba(255,23,68,0.5) !important;
+    }
+    
     /* Sidebar estilizada para lista de arquivos */
     section[data-testid="stSidebar"] .stMarkdown ul {
         list-style: none; padding-left: 0;
