@@ -830,10 +830,10 @@ st.markdown(
     
     /* Botão de envio com neon */
     button[data-testid="chatSubmitButton"] {
-        background: linear-gradient(145deg, #ff1744, #d50000) !important;
+        background: linear-gradient(145deg, #00C851, #00A136) !important;
         border: none !important;
         border-radius: 50% !important;
-        box-shadow: 0 0 15px rgba(255,23,68,0.5) !important;
+        box-shadow: 0 0 15px rgba(0,200,81,0.5) !important;
     }
     
     /* Sidebar estilizada para lista de arquivos */
