@@ -836,6 +836,28 @@ st.markdown(
         box-shadow: 0 0 15px rgba(0,200,81,0.5) !important;
     }
     
+    /* CSS ULTRA ESPECÍFICO para forçar verde no container do chat */
+    div[class*="st-emotion-cache"] {
+        background: #1a1a1a !important;
+        border-color: #00C851 !important;
+    }
+    
+    /* Forçar verde em todos os elementos do chat input */
+    .stChatInput div, .stChatInput div div, 
+    [data-testid="stChatInputContainer"] div,
+    [class*="st-emotion-cache"][class*="exa2ht1"] {
+        background: #1a1a1a !important;
+        border-color: #00C851 !important;
+        background-color: #1a1a1a !important;
+    }
+    
+    /* Especificamente para o elemento da imagem */
+    div.st-emotion-cache-19mk8.st.exa2ht1 {
+        background: #1a1a1a !important;
+        background-color: #1a1a1a !important;
+        border-color: #00C851 !important;
+    }
+    
     /* Sidebar estilizada para lista de arquivos */
     section[data-testid="stSidebar"] .stMarkdown ul {
         list-style: none; padding-left: 0;
