@@ -1,0 +1,16 @@
+[theme]
+# Dark theme inspired by the provided design: dark background and pink accent.
+base = "dark"
+primaryColor = "#E91E63"            # Pink accent for buttons/inputs
+backgroundColor = "#0f0f10"          # Main background (very dark)
+secondaryBackgroundColor = "#17181a" # Panels/Sidebar background
+textColor = "#FFFFFF"                # High contrast text
+font = "sans serif"
+
+[server]
+headless = true
+# Mantemos a proteção CSRF ativa (padrão do Streamlit)
+enableXsrfProtection = true
+
+[client]
+showErrorDetails = true
