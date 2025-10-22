@@ -812,7 +812,7 @@ st.markdown(
         font-size: 1.2rem !important;
         background: transparent !important;
         border: none !important;
-        color: #00FF7F !important;
+        color: #FFFFFF !important;
         font-weight: 500 !important;
     }
     .stChatInput > div > div textarea::placeholder {
