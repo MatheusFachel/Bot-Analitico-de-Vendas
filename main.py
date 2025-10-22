@@ -898,6 +898,317 @@ st.markdown(
         margin: .25rem 0; padding: .35rem .5rem; background: #1f2023; border-radius: .35rem;
     }
     section[data-testid="stSidebar"] li small { color: #bbb; }
+    
+    /* ============ SIDEBAR PREMIUM DESIGN ============ */
+    
+    /* Cores por seção */
+    :root {
+        --color-config: #0066FF;
+        --color-filter: #F59E0B;
+        --color-files: #10B981;
+        --color-data: #6B46C1;
+        --color-stats: #6B7280;
+    }
+    
+    /* Container geral da sidebar */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0A0B0D 0%, #1A1D23 100%) !important;
+        border-right: 1px solid #2A2F38 !important;
+    }
+    
+    /* Cards para cada seção */
+    .sidebar-card {
+        background: linear-gradient(135deg, #1A1D23 0%, #2A2F38 100%);
+        border: 1px solid #404854;
+        border-radius: 12px;
+        padding: 1rem;
+        margin: 0.75rem 0;
+        position: relative;
+        transition: all 0.3s ease;
+        border-left: 4px solid transparent;
+    }
+    
+    .sidebar-card:hover {
+        border-color: #6B7280;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        transform: translateX(2px);
+    }
+    
+    /* Cards específicos por seção */
+    .card-config {
+        border-left-color: var(--color-config) !important;
+    }
+    
+    .card-filter {
+        border-left-color: var(--color-filter) !important;
+    }
+    
+    .card-files {
+        border-left-color: var(--color-files) !important;
+    }
+    
+    .card-data {
+        border-left-color: var(--color-data) !important;
+    }
+    
+    .card-stats {
+        border-left-color: var(--color-stats) !important;
+    }
+    
+    /* Títulos das seções com ícones */
+    .sidebar-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin-bottom: 1rem;
+        color: #F3F4F6;
+    }
+    
+    .title-config { color: var(--color-config); }
+    .title-filter { color: var(--color-filter); }
+    .title-files { color: var(--color-files); }
+    .title-data { color: var(--color-data); }
+    .title-stats { color: var(--color-stats); }
+    
+    /* Botões premium */
+    section[data-testid="stSidebar"] .stButton > button {
+        background: linear-gradient(135deg, #0066FF 0%, #3385FF 100%) !important;
+        border: none !important;
+        border-radius: 8px !important;
+        color: white !important;
+        font-weight: 500 !important;
+        padding: 0.6rem 1rem !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        position: relative !important;
+        overflow: hidden !important;
+        box-shadow: 0 2px 4px rgba(0, 102, 255, 0.2) !important;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        transition: left 0.5s ease;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button:hover {
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 12px rgba(0, 102, 255, 0.4) !important;
+        background: linear-gradient(135deg, #3385FF 0%, #0066FF 100%) !important;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button:hover::before {
+        left: 100%;
+    }
+    
+    /* Botões secundários */
+    .btn-secondary {
+        background: transparent !important;
+        border: 1px solid #6B7280 !important;
+        color: #D1D5DB !important;
+    }
+    
+    .btn-secondary:hover {
+        border-color: #9CA3AF !important;
+        background: rgba(156, 163, 175, 0.1) !important;
+    }
+    
+    /* Selectbox e Multiselect estilizados */
+    section[data-testid="stSidebar"] .stSelectbox > div > div,
+    section[data-testid="stSidebar"] .stMultiSelect > div > div {
+        background: #2A2F38 !important;
+        border: 1px solid #404854 !important;
+        border-radius: 8px !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    section[data-testid="stSidebar"] .stSelectbox > div > div:hover,
+    section[data-testid="stSidebar"] .stMultiSelect > div > div:hover {
+        border-color: #0066FF !important;
+        box-shadow: 0 0 0 1px rgba(0, 102, 255, 0.3) !important;
+    }
+    
+    /* Checkboxes customizados */
+    section[data-testid="stSidebar"] .stCheckbox > label {
+        background: rgba(42, 47, 56, 0.5) !important;
+        border-radius: 6px !important;
+        padding: 0.5rem !important;
+        margin: 0.25rem 0 !important;
+        transition: all 0.2s ease !important;
+        border-left: 3px solid transparent !important;
+    }
+    
+    section[data-testid="stSidebar"] .stCheckbox > label:hover {
+        background: rgba(42, 47, 56, 0.8) !important;
+        border-left-color: var(--color-files) !important;
+    }
+    
+    /* Status badges */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid #10B981;
+        border-radius: 20px;
+        padding: 4px 12px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #10B981;
+        margin: 2px;
+    }
+    
+    .status-badge-warning {
+        background: rgba(245, 158, 11, 0.1);
+        border-color: #F59E0B;
+        color: #F59E0B;
+    }
+    
+    .status-badge-info {
+        background: rgba(0, 102, 255, 0.1);
+        border-color: #0066FF;
+        color: #3385FF;
+    }
+    
+    /* Expander personalizado */
+    section[data-testid="stSidebar"] .streamlit-expander {
+        border: 1px solid #404854 !important;
+        border-radius: 8px !important;
+        background: rgba(42, 47, 56, 0.3) !important;
+    }
+    
+    section[data-testid="stSidebar"] .streamlit-expander > summary {
+        background: rgba(42, 47, 56, 0.5) !important;
+        border-radius: 6px !important;
+        font-weight: 500 !important;
+        color: #D1D5DB !important;
+    }
+    
+    /* Progress bar para seleção de arquivos */
+    .file-progress {
+        width: 100%;
+        height: 4px;
+        background: #404854;
+        border-radius: 2px;
+        overflow: hidden;
+        margin: 8px 0;
+    }
+    
+    .file-progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, var(--color-files), #34D399);
+        border-radius: 2px;
+        transition: width 0.3s ease;
+    }
+    
+    /* Tooltips */
+    .tooltip {
+        position: relative;
+        display: inline-block;
+        cursor: help;
+    }
+    
+    .tooltip::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: 125%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #1A1D23;
+        color: #F3F4F6;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+        border: 1px solid #404854;
+        z-index: 1000;
+    }
+    
+    .tooltip:hover::after {
+        opacity: 1;
+    }
+    
+    /* Seções colapsáveis */
+    .collapsible-section {
+        margin: 1rem 0;
+    }
+    
+    .collapsible-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem;
+        background: rgba(42, 47, 56, 0.5);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border-left: 4px solid transparent;
+    }
+    
+    .collapsible-header:hover {
+        background: rgba(42, 47, 56, 0.8);
+    }
+    
+    .collapsible-content {
+        padding: 1rem;
+        background: rgba(26, 29, 35, 0.5);
+        border-radius: 0 0 8px 8px;
+        border-top: 1px solid #404854;
+    }
+    
+    /* Animações */
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    
+    .animate-slide-down {
+        animation: slideDown 0.3s ease-out;
+    }
+    
+    .animate-fade-in {
+        animation: fadeIn 0.3s ease-out;
+    }
+    
+    /* Responsividade da sidebar */
+    @media (max-width: 768px) {
+        .sidebar-card {
+            margin: 0.5rem 0;
+            padding: 0.75rem;
+        }
+        
+        .sidebar-title {
+            font-size: 1rem;
+        }
+    }
+    
+    /* Scrollbar da sidebar */
+    section[data-testid="stSidebar"] ::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    section[data-testid="stSidebar"] ::-webkit-scrollbar-track {
+        background: #1A1D23;
+    }
+    
+    section[data-testid="stSidebar"] ::-webkit-scrollbar-thumb {
+        background: linear-gradient(135deg, #0066FF, #3385FF);
+        border-radius: 3px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -959,8 +1270,15 @@ def _fmt_brl(v: float) -> str:
         return "R$ 0,00"
 
 with st.sidebar:
-    # 1) Configurações
-    st.subheader("Configurações")
+    # ============ SEÇÃO 1: CONFIGURAÇÕES ============
+    st.markdown("""
+    <div class="sidebar-card card-config animate-fade-in">
+        <div class="sidebar-title title-config">
+            ⚙️ Configurações
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
     model_options = get_available_models()
     selected_model = st.selectbox(
         "Modelo do Gemini",
@@ -969,86 +1287,242 @@ with st.sidebar:
         key="model_name",
         help="Escolha o modelo para responder às suas perguntas. Recomendado: gemini-2.5-flash (mais rápido)."
     )
-    if st.button("Recarregar dados", use_container_width=True, help="Limpa o cache e recarrega os arquivos do Drive"):
-        st.cache_data.clear()
-        st.rerun()
+    
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("🔄 Recarregar", use_container_width=True, help="Limpa o cache e recarrega os arquivos do Drive"):
+            st.cache_data.clear()
+            st.rerun()
+    with col2:
+        st.markdown(f"""
+        <div class="status-badge status-badge-info">
+            ⚡ {selected_model.replace('models/', '').replace('gemini-', '')}
+        </div>
+        """, unsafe_allow_html=True)
 
-    # 2) Filtros (removido filtro por data; mantemos produtos e regiões)
-    st.divider()
-    st.subheader("Filtros")
+    # ============ SEÇÃO 2: FILTROS ============
+    st.markdown("""
+    <div class="sidebar-card card-filter animate-fade-in">
+        <div class="sidebar-title title-filter">
+            🔍 Filtros
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
     filter_info = {}
     if not sales_data_df.empty:
         df_for_filters = sales_data_df
-        # Produtos (vazio por padrão)
+        
+        # Contadores para badges
+        total_products = len(df_for_filters['produto'].dropna().unique()) if 'produto' in df_for_filters.columns else 0
+        total_regions = len(df_for_filters['regiao'].dropna().unique()) if 'regiao' in df_for_filters.columns else 0
+        
+        # Produtos
         if 'produto' in df_for_filters.columns:
             prods = sorted([p for p in df_for_filters['produto'].dropna().astype(str).unique()][:5000])
-            sel_prods = st.multiselect("Produtos", options=prods, default=[], key='f_produtos')
+            
+            st.markdown(f"""
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="color: #D1D5DB; font-weight: 500;">🏷️ Produtos</span>
+                <div class="status-badge status-badge-info">{total_products} disponíveis</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            sel_prods = st.multiselect("", options=prods, default=[], key='f_produtos', label_visibility="collapsed")
             filter_info['produtos'] = sel_prods
-        # Regiões (vazio por padrão)
+            
+            if sel_prods:
+                st.markdown(f"""
+                <div class="status-badge">{len(sel_prods)} selecionados</div>
+                """, unsafe_allow_html=True)
+        
+        # Regiões
         if 'regiao' in df_for_filters.columns:
             regs = sorted([r for r in df_for_filters['regiao'].dropna().astype(str).unique()][:5000])
-            sel_regs = st.multiselect("Regiões", options=regs, default=[], key='f_regioes')
+            
+            st.markdown(f"""
+            <div style="display: flex; align-items: center; gap: 8px; margin: 16px 0 8px 0;">
+                <span style="color: #D1D5DB; font-weight: 500;">🗺️ Regiões</span>
+                <div class="status-badge status-badge-info">{total_regions} disponíveis</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            sel_regs = st.multiselect("", options=regs, default=[], key='f_regioes', label_visibility="collapsed")
             filter_info['regioes'] = sel_regs
+            
+            if sel_regs:
+                st.markdown(f"""
+                <div class="status-badge">{len(sel_regs)} selecionadas</div>
+                """, unsafe_allow_html=True)
+    else:
+        st.info("📊 Aguardando dados para mostrar filtros...")
 
-    # 3) Arquivos carregados
-    st.divider()
-    st.header("Arquivos carregados")
+    # ============ SEÇÃO 3: ARQUIVOS CARREGADOS ============
+    st.markdown("""
+    <div class="sidebar-card card-files animate-fade-in">
+        <div class="sidebar-title title-files">
+            📁 Arquivos Carregados
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
     selected_file_names: List[str] = []
     if loaded_files:
-        st.caption("Selecione os arquivos que deseja incluir na análise")
+        # Progress bar para seleção
+        selected_count = sum(1 for f in loaded_files if st.session_state.get(f"file_{f['id']}", True))
+        progress_percent = (selected_count / len(loaded_files)) * 100
+        
+        st.markdown(f"""
+        <div style="margin: 12px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="color: #D1D5DB; font-size: 0.875rem;">Selecionados</span>
+                <div class="status-badge">{selected_count}/{len(loaded_files)}</div>
+            </div>
+            <div class="file-progress">
+                <div class="file-progress-bar" style="width: {progress_percent}%;"></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Botões de controle
         cols_sel = st.columns(2)
         with cols_sel[0]:
-            if st.button("Selecionar todos", use_container_width=True):
+            if st.button("✅ Todos", use_container_width=True):
                 for f in loaded_files:
                     st.session_state[f"file_{f['id']}"] = True
+                st.rerun()
         with cols_sel[1]:
-            if st.button("Limpar seleção", use_container_width=True):
+            if st.button("❌ Limpar", use_container_width=True):
                 for f in loaded_files:
                     st.session_state[f"file_{f['id']}"] = False
+                st.rerun()
+        
+        # Lista de arquivos com ícones melhorados
         for f in loaded_files:
             icon = "📄" if f.get("mimeType") == 'text/csv' else "🧮"
             key = f"file_{f['id']}"
             default_checked = st.session_state.get(key, True)
-            checked = st.checkbox(f"{icon} {f['name']} ({f.get('rows', 0)} linhas)", value=default_checked, key=key)
+            
+            # Formatação melhorada
+            rows_text = f"{f.get('rows', 0):,}".replace(',', '.')
+            file_size = f"({rows_text} linhas)"
+            
+            checked = st.checkbox(
+                f"{icon} **{f['name']}** {file_size}", 
+                value=default_checked, 
+                key=key,
+                help=f"Arquivo: {f['name']}\nLinhas: {rows_text}\nTipo: {f.get('mimeType', 'N/A')}"
+            )
             if checked:
                 selected_file_names.append(f['name'])
     else:
-        st.info("Nenhum arquivo listado ainda.")
+        st.markdown("""
+        <div style="text-align: center; padding: 2rem; color: #6B7280;">
+            📁 Nenhum arquivo encontrado<br>
+            <small>Verifique a configuração do Google Drive</small>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # 4) Dados selecionados (prévia e download)
-    st.divider()
-    st.subheader("Dados selecionados")
+    # ============ SEÇÃO 4: DADOS SELECIONADOS ============
+    st.markdown("""
+    <div class="sidebar-card card-data animate-fade-in">
+        <div class="sidebar-title title-data">
+            📊 Dados Selecionados
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
     if not sales_data_df.empty and selected_file_names:
-        # Aplica filtros para mostrar a prévia na sidebar
         preview_df = _apply_filters(sales_data_df, selected_file_names, filter_info)
         
         if not preview_df.empty:
-            with st.expander("Prévia dos dados (25 linhas)"):
+            # Status dos dados
+            st.markdown(f"""
+            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin: 12px 0;">
+                <div class="status-badge">{len(preview_df):,} registros</div>
+                <div class="status-badge status-badge-info">{len(preview_df.columns)} colunas</div>
+                <div class="status-badge status-badge-warning">{preview_df.memory_usage(deep=True).sum() / 1024 / 1024:.1f} MB</div>
+            </div>
+            """.replace(',', '.'), unsafe_allow_html=True)
+            
+            # Prévia e download
+            with st.expander("👀 Prévia dos dados (25 linhas)", expanded=False):
                 st.dataframe(preview_df.head(25), use_container_width=True)
+            
+            # Botão de download estilizado
+            csv_data = preview_df.to_csv(index=False)
             st.download_button(
-                label="Baixar CSV consolidado",
-                data=preview_df.to_csv(index=False),
+                label="📥 Baixar CSV consolidado",
+                data=csv_data,
                 file_name="vendas_consolidado.csv",
                 mime="text/csv",
-                use_container_width=True
+                use_container_width=True,
+                help="Download dos dados filtrados em formato CSV"
             )
-            st.caption(f"{len(preview_df):,} registros após filtros")
         else:
-            st.info("Nenhum dado disponível com os filtros atuais")
+            st.markdown("""
+            <div style="text-align: center; padding: 1.5rem; color: #6B7280;">
+                🔍 Nenhum dado corresponde aos filtros<br>
+                <small>Ajuste os filtros para ver resultados</small>
+            </div>
+            """, unsafe_allow_html=True)
     else:
-        st.info("Selecione arquivos para ver os dados")
+        st.markdown("""
+        <div style="text-align: center; padding: 1.5rem; color: #6B7280;">
+            📋 Selecione arquivos para prévia<br>
+            <small>Escolha arquivos na seção acima</small>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # 5) Resumo da carga (sem diagnóstico)
-    st.divider()
-    st.subheader("Resumo da carga")
-    st.write(f"Arquivos encontrados: {load_stats.get('file_count', 0)}")
-    st.write(f"Linhas consolidadas: {load_stats.get('row_count', 0)}")
-    st.write(f"Tempo de carga: {load_stats.get('load_seconds', 0):.2f}s")
-    # métricas extras
+    # ============ SEÇÃO 5: RESUMO DA CARGA ============
+    st.markdown("""
+    <div class="sidebar-card card-stats animate-fade-in">
+        <div class="sidebar-title title-stats">
+            📈 Resumo da Carga
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Métricas em badges
+    file_count = load_stats.get('file_count', 0)
+    row_count = load_stats.get('row_count', 0)
+    load_time = load_stats.get('load_seconds', 0)
+    
+    st.markdown(f"""
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="color: #D1D5DB;">📁 Arquivos</span>
+            <div class="status-badge status-badge-info">{file_count}</div>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="color: #D1D5DB;">📊 Linhas</span>
+            <div class="status-badge">{row_count:,}".replace(',', '.')</div>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="color: #D1D5DB;">⚡ Tempo</span>
+            <div class="status-badge status-badge-warning">{load_time:.1f}s</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Métricas extras em formato compacto
     if 'rows_before_dedup' in load_stats and 'dedup_removed' in load_stats:
-        st.caption(f"Antes da dedup: {load_stats.get('rows_before_dedup', 0)} | Removidas: {load_stats.get('dedup_removed', 0)}")
+        dedup_removed = load_stats.get('dedup_removed', 0)
+        if dedup_removed > 0:
+            st.markdown(f"""
+            <div style="margin-top: 12px; padding: 8px; background: rgba(245, 158, 11, 0.1); border-radius: 6px; border-left: 3px solid #F59E0B;">
+                <small style="color: #F59E0B;">🧹 Duplicatas removidas: {dedup_removed}</small>
+            </div>
+            """, unsafe_allow_html=True)
+    
     if 'aggregated_tabs_skipped' in load_stats:
-        st.caption(f"Abas agregadas ignoradas: {load_stats.get('aggregated_tabs_skipped', 0)}")
+        tabs_skipped = load_stats.get('aggregated_tabs_skipped', 0)
+        if tabs_skipped > 0:
+            st.markdown(f"""
+            <div style="margin-top: 8px; padding: 8px; background: rgba(107, 114, 128, 0.1); border-radius: 6px; border-left: 3px solid #6B7280;">
+                <small style="color: #9CA3AF;">📋 Abas agregadas ignoradas: {tabs_skipped}</small>
+            </div>
+            """, unsafe_allow_html=True)
 
 if not sales_data_df.empty:
     st.success(f"Dados de {len(sales_data_df)} transações carregados com sucesso!")
