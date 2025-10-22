@@ -840,7 +840,7 @@ st.markdown(
     .stChatInputContainer > div, 
     .stChatInput > div,
     div[data-testid="stChatInputContainer"] > div {
-        background: transparent !important;
+        background: linear-gradient(145deg, #1a1a1a, #2d2d2d) !important;
         border-color: #00C851 !important;
     }
     
