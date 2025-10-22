@@ -43,6 +43,43 @@ def get_main_styles():
         to { width: 300px; }
     }
     
+    /* ===== MÉTRICAS PREMIUM COM CARDS E GRADIENTES ===== */
+    
+    /* Métricas estilizadas como cards premium */
+    div[data-testid="metric-container"] {
+        background: linear-gradient(135deg, #1A1D23 0%, #2A2F38 100%) !important;
+        border: 1px solid #404854 !important;
+        border-left: 4px solid #00C851 !important;
+        border-radius: 12px !important;
+        padding: 1.5rem !important;
+        margin: 0.5rem 0 !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+        transition: all 0.3s ease !important;
+    }
+
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.4) !important;
+        border-left-color: #0066FF !important;
+    }
+
+    /* Valores das métricas maiores e coloridos */
+    div[data-testid="metric-container"] [data-testid="metric-value"] {
+        font-size: 2.2rem !important;
+        font-weight: 800 !important;
+        color: #00C851 !important;
+        text-shadow: 0 0 10px rgba(0, 200, 81, 0.3) !important;
+    }
+
+    /* Labels das métricas */
+    div[data-testid="metric-container"] [data-testid="metric-label"] {
+        font-size: 1rem !important;
+        font-weight: 600 !important;
+        color: #9CA3AF !important;
+        text-transform: uppercase !important;
+        letter-spacing: 1px !important;
+    }
+    
     /* ===== ESTILOS PRINCIPAIS DO CHAT ===== */
     
     /* Destaque MUITO visível na barra de conversa */
