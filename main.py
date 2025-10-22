@@ -816,7 +816,7 @@ st.markdown(
         font-weight: 500 !important;
     }
     .stChatInput > div > div textarea::placeholder {
-        color: #90EE90 !important;
+        color: #FFFFFF !important;
         opacity: 0.9 !important;
         font-weight: 400 !important;
     }
