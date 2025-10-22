@@ -1004,53 +1004,6 @@ with st.sidebar:
     if 'aggregated_tabs_skipped' in load_stats:
         st.caption(f"Abas agregadas ignoradas: {load_stats.get('aggregated_tabs_skipped', 0)}")
 
-    # 6) Informações dos dados filtrados
-    st.divider()
-    st.subheader("Informações dos dados")
-    if not sales_data_df.empty and 'selected_file_names' in locals() and 'filter_info' in locals():
-        # Aplica filtros para mostrar informações atualizadas
-        info_df = _apply_filters(sales_data_df, selected_file_names, filter_info)
-        
-        if not info_df.empty:
-            # Período nos dados
-            if 'data' in info_df.columns:
-                try:
-                    min_dt = info_df['data'].min()
-                    max_dt = info_df['data'].max()
-                    st.write(f"📅 **Período:** {min_dt.date() if pd.notna(min_dt) else '?'} a {max_dt.date() if pd.notna(max_dt) else '?'}")
-                except Exception:
-                    pass
-            
-            # Aviso sobre linhas sem data
-            if 'data' in info_df.columns:
-                try:
-                    invalid_dates = int(info_df['data'].isna().sum())
-                    if invalid_dates > 0:
-                        st.warning(f"⚠️ {invalid_dates} linhas sem data válida incluídas")
-                except Exception:
-                    pass
-            
-            # Top produto
-            if 'produto' in info_df.columns:
-                try:
-                    receita_col = 'receita_total' if 'receita_total' in info_df.columns else None
-                    if not receita_col and {'quantidade','preco_unitario'}.issubset(info_df.columns):
-                        receita_col = 'receita_total_temp'
-                        info_df[receita_col] = info_df['quantidade'] * info_df['preco_unitario']
-                    
-                    top_prod = (
-                        info_df.groupby('produto')[receita_col].sum().sort_values(ascending=False).head(1)
-                        if receita_col else info_df.groupby('produto')['quantidade'].sum().sort_values(ascending=False).head(1)
-                    )
-                    if not top_prod.empty:
-                        st.write(f"🏆 **Top produto:** {top_prod.index[0]}")
-                except Exception:
-                    pass
-        else:
-            st.info("Selecione arquivos e aplique filtros para ver informações")
-    else:
-        st.info("Aguardando dados...")
-
 if not sales_data_df.empty:
     st.success(f"Dados de {len(sales_data_df)} transações carregados com sucesso!")
     # Aplica filtros da sidebar
