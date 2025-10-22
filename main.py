@@ -544,10 +544,56 @@ def load_sales_data(_drive_folder_id):
             return pd.DataFrame(), [], {"file_count": 0, "row_count": 0, "load_seconds": 0.0}, {"folder_id": _drive_folder_id, "counts_by_mime": {}, "unsupported": []}
 
 
-def get_gemini_analysis(user_query, sales_df, model_name: str = 'models/gemini-2.5-pro'):
+def check_context_limit(sales_df, model_name: str) -> tuple[bool, str]:
+    """Verifica se o dataset excede os limites de contexto do modelo."""
+    # Definir limites aproximados por modelo (em número de linhas)
+    model_limits = {
+        'models/gemini-2.5-flash': 15000,
+        'models/gemini-2.5-pro': 50000,
+        'models/gemini-1.5-flash': 10000,
+        'models/gemini-1.5-pro': 30000,
+        'models/gemini-flash-latest': 15000,
+        'models/gemini-pro-latest': 50000,
+    }
+    
+    current_rows = len(sales_df)
+    limit = model_limits.get(model_name, 10000)  # default conservador
+    
+    if current_rows > limit:
+        suggested_models = []
+        for model, model_limit in model_limits.items():
+            if model_limit > current_rows:
+                suggested_models.append(model.replace('models/', ''))
+        
+        suggestion_text = f" Sugestão: use um modelo mais robusto como {', '.join(suggested_models[:2])}." if suggested_models else ""
+        
+        message = f"""
+⚠️ **Dataset muito grande para o modelo atual**
+
+Seu dataset possui **{current_rows:,} linhas**, mas o modelo `{model_name.replace('models/', '')}` suporta aproximadamente **{limit:,} linhas**.
+
+{suggestion_text}
+
+**Como resolver:**
+1. Vá na sidebar em "Configurações" 
+2. Altere o "Modelo do Gemini" para um mais robusto
+3. Ou aplique filtros para reduzir o dataset
+        """.strip()
+        
+        return False, message
+    
+    return True, ""
+
+
+def get_gemini_analysis(user_query, sales_df, model_name: str = 'models/gemini-2.5-flash'):
     """Envia a pergunta e os dados para o Gemini para análise."""
     if sales_df.empty:
         return "Os dados de vendas não foram carregados. Não consigo analisar."
+
+    # Verificar limite de contexto
+    is_within_limit, limit_message = check_context_limit(sales_df, model_name)
+    if not is_within_limit:
+        return limit_message
 
     csv_data = sales_df.to_csv(index=False)
     
@@ -919,9 +965,9 @@ with st.sidebar:
     selected_model = st.selectbox(
         "Modelo do Gemini",
         options=model_options,
-        index=model_options.index('models/gemini-2.5-pro') if 'models/gemini-2.5-pro' in model_options else 0,
+        index=model_options.index('models/gemini-2.5-flash') if 'models/gemini-2.5-flash' in model_options else 0,
         key="model_name",
-        help="Escolha o modelo para responder às suas perguntas. Recomendado: gemini-2.5-pro."
+        help="Escolha o modelo para responder às suas perguntas. Recomendado: gemini-2.5-flash (mais rápido)."
     )
     if st.button("Recarregar dados", use_container_width=True, help="Limpa o cache e recarrega os arquivos do Drive"):
         st.cache_data.clear()
@@ -1039,7 +1085,7 @@ if not sales_data_df.empty:
             with st.spinner("Analisando os dados..."):
                 # 1) Tenta Planner→Executor
                 catalog = _build_data_catalog(filtered_df)
-                plan = _plan_with_llm(user_query, catalog, model_name=st.session_state.get("model_name", 'models/gemini-2.5-pro'))
+                plan = _plan_with_llm(user_query, catalog, model_name=st.session_state.get("model_name", 'models/gemini-2.5-flash'))
                 used_planner = False
                 final_text = ""
                 if isinstance(plan, dict) and not plan.get('error'):
@@ -1050,7 +1096,7 @@ if not sales_data_df.empty:
                         user_query=user_query,
                         plan=plan,
                         exec_res=exec_res,
-                        model_name=st.session_state.get("model_name", 'models/gemini-2.5-pro')
+                        model_name=st.session_state.get("model_name", 'models/gemini-2.5-flash')
                     )
                 # 2) Fallback: resumo + amostra para o LLM
                 if not used_planner:
@@ -1068,7 +1114,7 @@ if not sales_data_df.empty:
                     PERGUNTA DO USUÁRIO
                     {user_query}
                     """
-                    final_text = get_gemini_analysis(compact_query, filtered_df, model_name=st.session_state.get("model_name", 'models/gemini-2.5-pro'))
+                    final_text = get_gemini_analysis(compact_query, filtered_df, model_name=st.session_state.get("model_name", 'models/gemini-2.5-flash'))
                 st.markdown(final_text)
             st.session_state.messages.append({"role": "assistant", "content": final_text})
 else:
