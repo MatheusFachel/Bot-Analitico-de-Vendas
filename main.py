@@ -1018,10 +1018,9 @@ if not sales_data_df.empty:
     total_transacoes = int(len(filtered_df))
     ticket_medio = (total_receita / total_transacoes) if total_transacoes > 0 else 0.0
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     c1.metric("Receita total (estimada)", _fmt_brl(total_receita))
-    c2.metric("Transações (linhas)", f"{total_transacoes:,}".replace(',', '.'))
-    c3.metric("Ticket médio (por venda)", _fmt_brl(ticket_medio))
+    c2.metric("Ticket médio (por venda)", _fmt_brl(ticket_medio))
     
     if "messages" not in st.session_state:
         st.session_state.messages = []
