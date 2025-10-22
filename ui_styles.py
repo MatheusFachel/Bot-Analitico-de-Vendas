@@ -14,6 +14,35 @@ def get_main_styles():
     """
     return """
     <style>
+    /* ===== LOGO MINIMALISTA COM SUBLINHADO ANIMADO ===== */
+    
+    h1 {
+        font-size: 3.5rem !important;
+        font-weight: 900 !important;
+        text-align: center !important;
+        color: #F3F4F6 !important;
+        margin: 2rem 0 !important;
+        position: relative !important;
+        letter-spacing: 2px !important;
+    }
+
+    h1::before {
+        content: '';
+        position: absolute;
+        bottom: -15px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #00C851, #0066FF);
+        border-radius: 2px;
+        animation: underline-grow 2s ease-out forwards;
+    }
+
+    @keyframes underline-grow {
+        to { width: 300px; }
+    }
+    
     /* ===== ESTILOS PRINCIPAIS DO CHAT ===== */
     
     /* Destaque MUITO visível na barra de conversa */
