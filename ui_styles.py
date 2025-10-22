@@ -43,9 +43,11 @@ def get_main_styles():
         to { width: 300px; }
     }
     
-    /* ===== MÉTRICAS PREMIUM COM CARDS E GRADIENTES ===== */
+    /* ===== MÉTRICAS PREMIUM COM CARDS E GRADIENTES - FORÇADO ===== */
     
-    /* Métricas estilizadas como cards premium */
+    /* Seletores ultra-específicos para métricas */
+    section[data-testid="stMain"] div[data-testid="metric-container"],
+    .main div[data-testid="metric-container"],
     div[data-testid="metric-container"] {
         background: linear-gradient(135deg, #1A1D23 0%, #2A2F38 100%) !important;
         border: 1px solid #404854 !important;
@@ -57,27 +59,49 @@ def get_main_styles():
         transition: all 0.3s ease !important;
     }
 
+    section[data-testid="stMain"] div[data-testid="metric-container"]:hover,
+    .main div[data-testid="metric-container"]:hover,
     div[data-testid="metric-container"]:hover {
         transform: translateY(-2px) !important;
         box-shadow: 0 8px 20px rgba(0,0,0,0.4) !important;
         border-left-color: #0066FF !important;
     }
 
-    /* Valores das métricas maiores e coloridos */
-    div[data-testid="metric-container"] [data-testid="metric-value"] {
-        font-size: 2.2rem !important;
-        font-weight: 800 !important;
+    /* Valores das métricas - ultra-específico */
+    section[data-testid="stMain"] div[data-testid="metric-container"] [data-testid="metric-value"],
+    .main div[data-testid="metric-container"] [data-testid="metric-value"],
+    div[data-testid="metric-container"] [data-testid="metric-value"],
+    div[data-testid="metric-container"] > div > div {
+        font-size: 2.5rem !important;
+        font-weight: 900 !important;
         color: #00C851 !important;
-        text-shadow: 0 0 10px rgba(0, 200, 81, 0.3) !important;
+        text-shadow: 0 0 15px rgba(0, 200, 81, 0.5) !important;
     }
 
-    /* Labels das métricas */
-    div[data-testid="metric-container"] [data-testid="metric-label"] {
-        font-size: 1rem !important;
-        font-weight: 600 !important;
-        color: #9CA3AF !important;
+    /* Labels das métricas - ultra-específico */
+    section[data-testid="stMain"] div[data-testid="metric-container"] [data-testid="metric-label"],
+    .main div[data-testid="metric-container"] [data-testid="metric-label"],
+    div[data-testid="metric-container"] [data-testid="metric-label"],
+    div[data-testid="metric-container"] > div:first-child {
+        font-size: 1.1rem !important;
+        font-weight: 700 !important;
+        color: #D1D5DB !important;
         text-transform: uppercase !important;
-        letter-spacing: 1px !important;
+        letter-spacing: 1.5px !important;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    /* Força estilo em qualquer métrica do Streamlit */
+    .metric-container,
+    [class*="metric"],
+    .stMetric {
+        background: linear-gradient(135deg, #1A1D23 0%, #2A2F38 100%) !important;
+        border: 1px solid #404854 !important;
+        border-left: 4px solid #00C851 !important;
+        border-radius: 12px !important;
+        padding: 1.5rem !important;
+        margin: 0.5rem 0 !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
     }
     
     /* ===== ESTILOS PRINCIPAIS DO CHAT ===== */
