@@ -1018,7 +1018,7 @@ if not sales_data_df.empty:
     total_transacoes = int(len(filtered_df))
     ticket_medio = (total_receita / total_transacoes) if total_transacoes > 0 else 0.0
 
-    c1, c2 = st.columns(2)
+    c1, c2 = st.columns([1, 1], gap="small")
     c1.metric("Receita total (estimada)", _fmt_brl(total_receita))
     c2.metric("Ticket médio (por venda)", _fmt_brl(ticket_medio))
     
