@@ -795,11 +795,14 @@ def _execute_plan(df: pd.DataFrame, plan: Dict[str, Any]) -> Dict[str, Any]:
             fim_dt = pd.to_datetime(fim, errors='coerce')
             if pd.notna(ini_dt) and pd.notna(fim_dt):
                 work = work[(work['data'] >= ini_dt) & (work['data'] <= fim_dt)]
-        # equals
+        # equals - comparação case-insensitive para colunas de texto
         equals = filters.get('equals', {}) if isinstance(filters, dict) else {}
         for col, vals in equals.items():
             if col in work.columns:
-                work = work[work[col].astype(str).isin([str(v) for v in vals])]
+                # Normaliza valores para lowercase para comparação case-insensitive
+                work_col_lower = work[col].astype(str).str.lower()
+                vals_lower = [str(v).lower() for v in vals]
+                work = work[work_col_lower.isin(vals_lower)]
     except Exception:
         pass
     # derivar receita_total se preciso
