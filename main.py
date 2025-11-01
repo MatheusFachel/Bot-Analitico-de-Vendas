@@ -481,6 +481,10 @@ def load_sales_data(_drive_folder_id):
                                         continue
                                     tmp = pd.read_excel(xls, sheet_name=sheet, engine='openpyxl')
                                     tmp = _standardize_dataframe(tmp)
+                                    # Tratamento flexível de colunas numéricas para XLSX
+                                    for col in ['quantidade', 'preco_unitario', 'receita_total']:
+                                        if col in tmp.columns:
+                                            tmp[col] = _clean_numeric_series(tmp[col])
                                     tmp['source_sheet'] = sheet
                                     sub_frames.append(tmp)
                                 aggregated_tabs_skipped += max(0, orig_count - len(sub_frames))
