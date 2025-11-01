@@ -147,30 +147,59 @@ def _standardize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 def _coerce_date_series(s: pd.Series) -> pd.Series:
     """Converte uma série para datetime de forma robusta:
-    - Strings com dayfirst=True
+    - Tenta múltiplos formatos comuns (ISO, BR, US)
+    - Strings com dayfirst=True para formato brasileiro
     - Números no formato serial do Excel (origin '1899-12-30')
     - Retorna NaT quando não possível
     """
     if s is None or len(s) == 0:
         return pd.to_datetime(pd.Series([], dtype='datetime64[ns]'))
+    
     try:
-        # Primeiro tenta converter strings convencionais
+        # Estratégia 1: Conversão automática com dayfirst=True (formato brasileiro)
         out = pd.to_datetime(s, dayfirst=True, errors='coerce')
-        # Se taxa de NaT for alta, tenta serial do Excel onde fizer sentido
         nat_ratio = out.isna().mean()
-        # Identifica valores que parecem números (inclui strings numéricas)
-        numeric_mask = pd.to_numeric(s, errors='coerce').notna()
-        if nat_ratio > 0.5 and numeric_mask.any():
-            excel_nums = pd.to_numeric(s.where(numeric_mask), errors='coerce')
-            # Heurística de faixa comum de seriais do Excel (datas recentes)
-            # 25569 ~ 1970-01-01; 60000 ~ 2064
-            plausible = excel_nums.between(20000, 80000)
-            if plausible.any():
-                alt = pd.to_datetime(excel_nums.where(plausible), unit='D', origin='1899-12-30', errors='coerce')
-                out = out.combine_first(alt)
+        
+        # Estratégia 2: Se muitos NaT, tenta formatos específicos
+        if nat_ratio > 0.5:
+            # Lista de formatos comuns em CSV
+            date_formats = [
+                '%Y-%m-%d',      # ISO: 2024-01-15
+                '%d/%m/%Y',      # BR: 15/01/2024
+                '%m/%d/%Y',      # US: 01/15/2024
+                '%d-%m-%Y',      # BR: 15-01-2024
+                '%Y/%m/%d',      # ISO: 2024/01/15
+                '%d.%m.%Y',      # EU: 15.01.2024
+            ]
+            
+            for fmt in date_formats:
+                try:
+                    temp = pd.to_datetime(s, format=fmt, errors='coerce')
+                    temp_nat_ratio = temp.isna().mean()
+                    # Se esse formato converteu mais datas, usa ele
+                    if temp_nat_ratio < nat_ratio:
+                        out = temp
+                        nat_ratio = temp_nat_ratio
+                        if nat_ratio < 0.1:  # Se >90% sucesso, para aqui
+                            break
+                except Exception:
+                    continue
+        
+        # Estratégia 3: Tenta formato serial do Excel se ainda houver muitos NaT
+        if nat_ratio > 0.5:
+            numeric_mask = pd.to_numeric(s, errors='coerce').notna()
+            if numeric_mask.any():
+                excel_nums = pd.to_numeric(s.where(numeric_mask), errors='coerce')
+                # Heurística de faixa comum de seriais do Excel
+                # 25569 ~ 1970-01-01; 80000 ~ 2119-02-28
+                plausible = excel_nums.between(20000, 80000)
+                if plausible.any():
+                    alt = pd.to_datetime(excel_nums.where(plausible), unit='D', origin='1899-12-30', errors='coerce')
+                    out = out.combine_first(alt)
+        
         return out
     except Exception:
-        # fallback bruto
+        # fallback: tentativa final com configuração padrão
         return pd.to_datetime(s, errors='coerce')
 
 
@@ -1322,14 +1351,14 @@ if not sales_data_df.empty:
                                 st.text("Verificando critérios individualmente:")
                                 monitor = filtered_df[filtered_df['produto'].astype(str).str.contains('Monitor 4k', case=False, na=False)]
                                 st.text(f"  'Monitor 4k': {len(monitor)} registros")
-                            if len(monitor) > 0:
-                                st.text(f"    Exemplos: {monitor['produto'].head(3).tolist()}")
-                            norte = filtered_df[filtered_df['regiao'].astype(str).str.contains('Norte', case=False, na=False)]
-                            st.text(f"  'Norte': {len(norte)} registros")
-                            if len(norte) > 0:
-                                st.text(f"    Exemplos: {norte['regiao'].head(3).tolist()}")
-                            jan1 = filtered_df[filtered_df['data'] == pd.to_datetime('2025-01-01')]
-                            st.text(f"  '2025-01-01': {len(jan1)} registros")
+                                if len(monitor) > 0:
+                                    st.text(f"    Exemplos: {monitor['produto'].head(3).tolist()}")
+                                norte = filtered_df[filtered_df['regiao'].astype(str).str.contains('Norte', case=False, na=False)]
+                                st.text(f"  'Norte': {len(norte)} registros")
+                                if len(norte) > 0:
+                                    st.text(f"    Exemplos: {norte['regiao'].head(3).tolist()}")
+                                jan1 = filtered_df[filtered_df['data'] == pd.to_datetime('2025-01-01')]
+                                st.text(f"  '2025-01-01': {len(jan1)} registros")
                         
                         st.markdown("**📋 Catálogo enviado ao LLM:**")
                         st.json(catalog, expanded=False)
