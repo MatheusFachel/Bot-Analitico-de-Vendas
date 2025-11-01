@@ -1114,6 +1114,44 @@ with st.sidebar:
             </div>
             """.replace(',', '.'), unsafe_allow_html=True)
             
+            # === PAINEL DE DIAGNÓSTICO ===
+            with st.expander("🔍 Diagnóstico de Dados", expanded=False):
+                st.markdown("**Colunas detectadas:**")
+                st.write(list(preview_df.columns))
+                
+                st.markdown("**Tipos de dados:**")
+                tipos_dict = preview_df.dtypes.astype(str).to_dict()
+                for col, tipo in list(tipos_dict.items())[:10]:  # Primeiras 10
+                    st.text(f"  {col}: {tipo}")
+                
+                if 'data' in preview_df.columns:
+                    st.markdown("**📅 Coluna 'data':**")
+                    total_dates = len(preview_df)
+                    valid_dates = preview_df['data'].notna().sum()
+                    st.text(f"  Válidas: {valid_dates}/{total_dates} ({100*valid_dates/total_dates:.1f}%)")
+                    if valid_dates > 0:
+                        st.text(f"  Range: {preview_df['data'].min()} até {preview_df['data'].max()}")
+                        st.text(f"  Amostra: {preview_df['data'].head(3).tolist()}")
+                
+                if 'receita_total' in preview_df.columns:
+                    st.markdown("**💰 Coluna 'receita_total':**")
+                    total_receita = preview_df['receita_total'].sum()
+                    zeros = (preview_df['receita_total'] == 0).sum()
+                    st.text(f"  Total: R$ {total_receita:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
+                    st.text(f"  Zeros: {zeros}/{len(preview_df)}")
+                    st.text(f"  Amostra: {preview_df['receita_total'].head(3).tolist()}")
+                
+                if 'produto' in preview_df.columns:
+                    st.markdown("**📦 Produtos únicos:**")
+                    produtos = preview_df['produto'].unique()[:10]
+                    for p in produtos:
+                        st.text(f"  - {p}")
+                
+                if 'regiao' in preview_df.columns:
+                    st.markdown("**🗺️ Regiões únicas:**")
+                    regioes = preview_df['regiao'].unique()
+                    st.text(f"  {', '.join(map(str, regioes))}")
+            
             # Prévia e download
             with st.expander("👀 Prévia dos dados (25 linhas)", expanded=False):
                 st.dataframe(preview_df.head(25), use_container_width=True)
@@ -1226,9 +1264,52 @@ if not sales_data_df.empty:
 
         with st.chat_message("assistant"):
             with st.spinner("Analisando os dados..."):
+                # === DEBUG: Painel expansível com informações da consulta ===
+                debug_expander = st.expander("🔍 Debug da Consulta", expanded=False)
+                
                 # 1) Tenta Planner→Executor
                 catalog = _build_data_catalog(filtered_df)
+                
+                with debug_expander:
+                    st.markdown("**📊 Dados disponíveis para a consulta:**")
+                    st.text(f"Total de registros: {len(filtered_df)}")
+                    st.text(f"Colunas: {list(filtered_df.columns)}")
+                    
+                    # Teste específico da consulta
+                    if 'produto' in filtered_df.columns and 'regiao' in filtered_df.columns and 'data' in filtered_df.columns:
+                        st.markdown("**🎯 Teste específico: Monitor 4k + Norte + 2025-01-01**")
+                        test_data = filtered_df[
+                            (filtered_df['produto'].astype(str).str.contains('Monitor 4k', case=False, na=False)) &
+                            (filtered_df['regiao'].astype(str).str.contains('Norte', case=False, na=False)) &
+                            (filtered_df['data'] == pd.to_datetime('2025-01-01'))
+                        ]
+                        st.text(f"Registros encontrados: {len(test_data)}")
+                        if len(test_data) > 0:
+                            st.dataframe(test_data[['data', 'produto', 'regiao', 'quantidade', 'preco_unitario', 'receita_total']].head())
+                            st.text(f"Receita total: R$ {test_data['receita_total'].sum():,.2f}")
+                        else:
+                            st.warning("⚠️ Nenhum registro encontrado com esses critérios!")
+                            st.text("Verificando critérios individualmente:")
+                            monitor = filtered_df[filtered_df['produto'].astype(str).str.contains('Monitor 4k', case=False, na=False)]
+                            st.text(f"  'Monitor 4k': {len(monitor)} registros")
+                            if len(monitor) > 0:
+                                st.text(f"    Exemplos: {monitor['produto'].head(3).tolist()}")
+                            norte = filtered_df[filtered_df['regiao'].astype(str).str.contains('Norte', case=False, na=False)]
+                            st.text(f"  'Norte': {len(norte)} registros")
+                            if len(norte) > 0:
+                                st.text(f"    Exemplos: {norte['regiao'].head(3).tolist()}")
+                            jan1 = filtered_df[filtered_df['data'] == pd.to_datetime('2025-01-01')]
+                            st.text(f"  '2025-01-01': {len(jan1)} registros")
+                    
+                    st.markdown("**📋 Catálogo enviado ao LLM:**")
+                    st.json(catalog, expanded=False)
+                
                 plan = _plan_with_llm(user_query, catalog, model_name=st.session_state.get("model_name", 'models/gemini-2.5-flash'))
+                
+                with debug_expander:
+                    st.markdown("**🤖 Plano gerado pelo LLM:**")
+                    st.json(plan, expanded=False)
+                
                 used_planner = False
                 final_text = ""
                 if isinstance(plan, dict) and not plan.get('error'):
