@@ -103,12 +103,18 @@ def _download_drive_file_bytes(drive_service, file_id: str, max_retries: int = 3
     return buf.read()
 
 def _normalize_colname(name: str) -> str:
+    """Normaliza nome de coluna removendo acentos, convertendo para minúsculas e padronizando caracteres especiais."""
     text = str(name).strip()
+    # Remove acentos e normaliza unicode
     text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
     text = text.lower()
-    for ch in ['/', '\\', '-', '.', ',', ';', ':', '(', ')', '[', ']', '{', '}', '  ']:
+    # Remove caracteres especiais comuns, substituindo por espaço
+    for ch in ['/', '\\', '-', '.', ',', ';', ':', '(', ')', '[', ']', '{', '}', '  ', '?', '!', '@', '#', '$', '%', '&', '*']:
         text = text.replace(ch, ' ')
+    # Junta palavras com underscore e remove múltiplos underscores
     text = '_'.join(text.split())
+    text = re.sub(r'_+', '_', text)  # múltiplos _ para único
+    text = text.strip('_')  # remove _ do início/fim
     return text
 
 def _standardize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -198,31 +204,44 @@ def _clean_numeric_series(s: pd.Series) -> pd.Series:
     - Remove moeda/símbolos (ex.: R$, %), NBSP e espaços.
     - Se a string tiver vírgula, trata como BR (',' decimal): remove pontos de milhar e troca vírgula por ponto.
     - Caso contrário, mantém '.' como decimal.
+    - Trata valores vazios ou inválidos como NaN
     """
     try:
         from pandas.api.types import is_numeric_dtype
     except Exception:
         is_numeric_dtype = lambda x: False  # fallback
 
+    # Se já for numérico, retorna como está
     if is_numeric_dtype(s):
         return s
+    
     def _parse(x: object) -> float:
-        if x is None:
+        if x is None or pd.isna(x):
             return float('nan')
+        
         sx = str(x).strip()
-        # remove moeda/símbolos, mantendo apenas dígitos, sinais e separadores
+        
+        # Casos vazios
+        if sx == '' or sx in {'-', '.', ',', 'N/A', 'n/a', '#N/A', 'NULL', 'null'}:
+            return float('nan')
+        
+        # Remove moeda/símbolos, mantendo apenas dígitos, sinais e separadores
         sx = re.sub(r"[^0-9,\.-]", "", sx)
-        sx = sx.replace('\u00A0', '').replace(' ', '')
+        sx = sx.replace('\u00A0', '').replace(' ', '').replace('\t', '')
+        
         if sx == '' or sx in {'-', '.', ','}:
             return float('nan')
-        # Se contém vírgula, tratamos como BR
+        
+        # Se contém vírgula, tratamos como BR (vírgula = decimal)
         if ',' in sx:
-            sx = sx.replace('.', '')  # remove milhar
+            # Remove pontos de milhar e troca vírgula por ponto
+            sx = sx.replace('.', '')
             sx = sx.replace(',', '.')
-        # Caso contrário, assume '.' como decimal
+        # Caso contrário, assume '.' como decimal (padrão internacional)
+        
         try:
             return float(sx)
-        except Exception:
+        except (ValueError, TypeError):
             return float('nan')
 
     return s.map(_parse)
@@ -481,16 +500,59 @@ def load_sales_data(_drive_folder_id):
                                         continue
                                     tmp = pd.read_excel(xls, sheet_name=sheet, engine='openpyxl')
                                     tmp = _standardize_dataframe(tmp)
-                                    # Tratamento flexível de colunas numéricas para XLSX
+                                    
+                                    # === VALIDAÇÃO E CONVERSÃO EXPLÍCITA DE TIPOS ===
+                                    # Forçar conversão de data se coluna existe
+                                    if 'data' in tmp.columns:
+                                        tmp['data'] = pd.to_datetime(tmp['data'], errors='coerce', dayfirst=True)
+                                        # Tenta também formato serial do Excel se muitos NaT
+                                        if tmp['data'].isna().mean() > 0.5:
+                                            numeric_dates = pd.to_numeric(tmp['data'], errors='coerce')
+                                            # Serial do Excel: 25569 = 1970-01-01
+                                            plausible = numeric_dates.between(20000, 80000)
+                                            if plausible.any():
+                                                excel_dates = pd.to_datetime(numeric_dates.where(plausible), unit='D', origin='1899-12-30', errors='coerce')
+                                                tmp['data'] = tmp['data'].combine_first(excel_dates)
+                                    
+                                    # Forçar conversão de colunas numéricas
                                     for col in ['quantidade', 'preco_unitario', 'receita_total']:
                                         if col in tmp.columns:
-                                            tmp[col] = _clean_numeric_series(tmp[col])
+                                            # Primeiro tenta conversão direta
+                                            tmp[col] = pd.to_numeric(tmp[col], errors='coerce')
+                                            # Se muitos NaN, tenta limpeza flexível
+                                            if tmp[col].isna().mean() > 0.3:
+                                                tmp[col] = _clean_numeric_series(tmp[col])
+                                            # Garante que não há NaN, substitui por 0
+                                            tmp[col] = tmp[col].fillna(0)
+                                    
                                     tmp['source_sheet'] = sheet
                                     sub_frames.append(tmp)
+                                    
+                                    # Log de diagnóstico (apenas em debug)
+                                    if os.getenv('DEBUG_MODE') == '1':
+                                        st.info(f"[DEBUG] Aba '{sheet}': {len(tmp)} linhas | Colunas: {list(tmp.columns)}")
+                                        if 'data' in tmp.columns:
+                                            st.info(f"[DEBUG] Datas válidas: {tmp['data'].notna().sum()}/{len(tmp)} | Range: {tmp['data'].min()} a {tmp['data'].max()}")
+                                
                                 aggregated_tabs_skipped += max(0, orig_count - len(sub_frames))
                                 df = pd.concat(sub_frames, ignore_index=True) if sub_frames else None
+                                
+                                # Validação pós-concatenação para XLSX
+                                if df is not None and not df.empty:
+                                    # Verificar se colunas essenciais têm dados válidos
+                                    warnings = []
+                                    if 'data' in df.columns and df['data'].isna().mean() > 0.5:
+                                        warnings.append(f"Mais de 50% das datas em '{file_name}' são inválidas")
+                                    if 'receita_total' in df.columns and (df['receita_total'] == 0).all():
+                                        warnings.append(f"Todas as receitas em '{file_name}' são zero - verifique formatação")
+                                    for w in warnings:
+                                        st.warning(f"⚠️ {w}")
+                                
                             except Exception as e:
                                 st.error(f"Erro ao ler XLSX '{file_name}': {e}")
+                                if os.getenv('DEBUG_MODE') == '1':
+                                    import traceback
+                                    st.error(traceback.format_exc())
                                 df = None
 
                     if df is not None:
