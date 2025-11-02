@@ -1021,8 +1021,8 @@ if os.path.exists(logo_path):
     # Logo + linha gradiente decorativa (mantém o estilo visual existente)
     st.markdown(f"""
     <div style="display: flex; flex-direction: column; align-items: center; padding: 1rem 0 2rem 0;">
-        <img src="data:image/png;base64,{logo_data}" alt="AlphaBot Logo" style="max-width: 450px; width: 100%; height: auto; margin-bottom: 15px;">
-        <div style="width: 300px; height: 4px; background: linear-gradient(90deg, #00C851, #0066FF); border-radius: 2px;"></div>
+        <img src="data:image/png;base64,{logo_data}" alt="AlphaBot Logo" style="max-width: 700px; width: 100%; height: auto; margin-bottom: 15px;">
+        <div style="width: 400px; height: 4px; background: linear-gradient(90deg, #00C851, #0066FF); border-radius: 2px;"></div>
     </div>
     """, unsafe_allow_html=True)
 else:
