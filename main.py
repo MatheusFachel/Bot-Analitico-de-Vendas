@@ -1007,7 +1007,27 @@ st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="wide", in
 # Aplica todos os estilos CSS da aplicação
 ui_styles.apply_all_styles(st)
 
-st.title("🤖 AlphaBot | Analista de Vendas")
+# Logo personalizada do AlphaBot com linha decorativa
+import os
+import base64
+
+logo_path = os.path.join(os.path.dirname(__file__), "assets", "logo_alphabot.png")
+
+# Verifica se a logo existe, senão usa título padrão
+if os.path.exists(logo_path):
+    with open(logo_path, "rb") as f:
+        logo_data = base64.b64encode(f.read()).decode()
+    
+    # Logo + linha gradiente decorativa (mantém o estilo visual existente)
+    st.markdown(f"""
+    <div style="display: flex; flex-direction: column; align-items: center; padding: 1rem 0 2rem 0;">
+        <img src="data:image/png;base64,{logo_data}" alt="AlphaBot Logo" style="max-width: 450px; width: 100%; height: auto; margin-bottom: 15px;">
+        <div style="width: 300px; height: 4px; background: linear-gradient(90deg, #00C851, #0066FF); border-radius: 2px;"></div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    # Fallback caso a logo não exista
+    st.title("🤖 AlphaBot | Analista de Vendas")
 
 sales_data_df, loaded_files, load_stats, drive_info = load_sales_data(GOOGLE_DRIVE_FOLDER_ID)
 
