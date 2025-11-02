@@ -1003,7 +1003,7 @@ def _narrate_results_with_llm(user_query: str, plan: Dict[str, Any], exec_res: D
 
 # --- Interface do Usuário com Streamlit ---
 st.set_page_config(
-    page_title="AlphaBot - Analista de Vendas", 
+    page_title="AlphaBot", 
     page_icon="assets/favicon_alphabot.png",
     layout="wide", 
     initial_sidebar_state="collapsed"
