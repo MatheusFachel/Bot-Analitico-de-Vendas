@@ -1002,7 +1002,12 @@ def _narrate_results_with_llm(user_query: str, plan: Dict[str, Any], exec_res: D
         return f"(Não foi possível gerar a narrativa do LLM: {e})\n{exec_res.get('summary', '')}"
 
 # --- Interface do Usuário com Streamlit ---
-st.set_page_config(page_title="AlphaBot - Analista de Vendas", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="AlphaBot - Analista de Vendas", 
+    page_icon="assets/favicon_alphabot.png",
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
 # Aplica todos os estilos CSS da aplicação
 ui_styles.apply_all_styles(st)
