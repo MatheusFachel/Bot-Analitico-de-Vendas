@@ -348,6 +348,48 @@ def _prepare_analysis_payload(df: pd.DataFrame, max_rows: int = 1000) -> Tuple[s
             if agg_cols:
                 g = by_month.groupby('mes')[agg_cols].sum(numeric_only=True).reset_index().head(24)
                 parts.append("Receita por mês (até 24 períodos):\n" + g.to_csv(index=False))
+            
+            # NOVO: Agregação por DIA (essencial para queries tipo "qual dia teve maior receita")
+            if agg_cols:
+                by_day = df.dropna(subset=['data']).copy()
+                if 'receita_total' not in by_day.columns and {'quantidade','preco_unitario'}.issubset(by_day.columns):
+                    by_day['receita_total'] = by_day['quantidade'] * by_day['preco_unitario']
+                
+                day_agg = (
+                    by_day.groupby('data')
+                    .agg({
+                        'receita_total': 'sum',
+                        'quantidade': 'sum'
+                    })
+                    .reset_index()
+                    .sort_values('receita_total', ascending=False)
+                    .head(30)  # Top 30 dias com maior receita
+                )
+                day_agg['data'] = day_agg['data'].dt.strftime('%Y-%m-%d')
+                parts.append("Top 30 dias com maior receita:\n" + day_agg.to_csv(index=False))
+                
+                # NOVO: Produto mais vendido por dia (para os top 10 dias)
+                if 'produto' in by_day.columns:
+                    top_days = day_agg.head(10)['data'].str[:10].tolist()
+                    day_product = []
+                    for day_str in top_days:
+                        day_data = by_day[by_day['data'].dt.strftime('%Y-%m-%d') == day_str]
+                        if len(day_data) > 0:
+                            prod_rank = (
+                                day_data.groupby('produto')['quantidade']
+                                .sum()
+                                .sort_values(ascending=False)
+                                .head(3)  # Top 3 produtos do dia
+                                .reset_index()
+                            )
+                            prod_rank['data'] = day_str
+                            day_product.append(prod_rank)
+                    
+                    if day_product:
+                        df_day_prod = pd.concat(day_product, ignore_index=True)
+                        # Reorganizar colunas: data, produto, quantidade
+                        df_day_prod = df_day_prod[['data', 'produto', 'quantidade']]
+                        parts.append("Top 3 produtos mais vendidos nos 10 dias de maior receita:\n" + df_day_prod.to_csv(index=False))
     except Exception:
         pass
 
@@ -724,6 +766,57 @@ def get_gemini_analysis(user_query, sales_df, model_name: str = 'models/gemini-2
         return response.text
     except Exception as e:
         return f"Desculpe, ocorreu um erro ao contatar o serviço de IA: {e}"
+
+
+def _detect_multistep_query(user_query: str) -> bool:
+    """
+    Detecta se a pergunta do usuário requer múltiplas etapas de análise.
+    
+    Padrões detectados:
+    - Perguntas com 'e qual' ou 'e o que'
+    - Perguntas com 'nesse dia', 'nesse mês', 'nessa região' (referência ao resultado anterior)
+    - Perguntas com múltiplos '?' ou estruturas compostas
+    - Perguntas que pedem 'maior/menor' + 'produto/região/categoria' (dois níveis)
+    
+    Returns:
+        True se detectar padrão multi-step, False caso contrário
+    """
+    query_lower = user_query.lower()
+    
+    # Padrões que indicam dependência sequencial
+    multistep_patterns = [
+        # Conectores que ligam duas perguntas
+        r'\be\s+qual\b',
+        r'\be\s+o\s+que\b',
+        r'\be\s+quais\b',
+        r'\be\s+quanto\b',
+        r'\be\s+quando\b',
+        
+        # Referências a resultados anteriores
+        r'\bnesse\s+dia\b',
+        r'\bnessa\s+data\b',
+        r'\bnesse\s+m[eê]s\b',
+        r'\bnessa\s+regi[aã]o\b',
+        r'\bnesse\s+per[ií]odo\b',
+        r'\bnessa\s+semana\b',
+        
+        # Padrões de agregação + detalhe
+        r'maior.*\be\s+(qual|quais|o\s+que)',
+        r'menor.*\be\s+(qual|quais|o\s+que)',
+        r'mais.*\be\s+(qual|quais|o\s+que)',
+        r'menos.*\be\s+(qual|quais|o\s+que)',
+    ]
+    
+    import re
+    for pattern in multistep_patterns:
+        if re.search(pattern, query_lower):
+            return True
+    
+    # Detectar múltiplas perguntas (mais de um '?')
+    if query_lower.count('?') > 1:
+        return True
+    
+    return False
 
 
 # ============== Planner → Executor para perguntas complexas ==============
@@ -1318,6 +1411,26 @@ if not sales_data_df.empty:
             st.markdown(user_query)
 
         with st.chat_message("assistant"):
+            # === DETECÇÃO DE PERGUNTAS MULTI-STEP ===
+            is_multistep = _detect_multistep_query(user_query)
+            
+            if is_multistep:
+                st.warning("""
+                ⚠️ **Pergunta Complexa Detectada**
+                
+                Sua pergunta parece ter múltiplas etapas dependentes (exemplo: "qual dia teve maior receita **e qual produto** foi mais vendido **nesse dia**").
+                
+                Por limitações das ferramentas gratuitas utilizadas neste projeto, perguntas com dependências sequenciais podem gerar **respostas inconsistentes**.
+                
+                **💡 Solução Recomendada:** Divida sua pergunta em etapas:
+                
+                1️⃣ Primeiro: "Qual foi o dia em 2024 com maior Receita Total?"
+                
+                2️⃣ Depois: "Qual foi o produto mais vendido em [data obtida]?"
+                
+                Vou tentar responder mesmo assim, mas recomendo usar perguntas separadas para garantir precisão.
+                """)
+                
             with st.spinner("Analisando os dados..."):
                 # === DEBUG: Painel expansível com informações da consulta (apenas se debug_mode ativo) ===
                 debug_mode_active = st.session_state.get("debug_mode", False)
@@ -1384,7 +1497,15 @@ if not sales_data_df.empty:
                     )
                 # 2) Fallback: resumo + amostra para o LLM
                 if not used_planner:
-                    resumo, csv_amostra = _prepare_analysis_payload(filtered_df, max_rows=1000)
+                    # Se planner falhou, notificar usuário quando debug ativado
+                    if st.session_state.get("debug_mode", False):
+                        st.warning("⚠️ Consulta complexa detectada - usando análise alternativa com dados completos")
+                    
+                    # Para datasets pequenos (< 5000 linhas), usar dados completos
+                    total_rows = len(filtered_df)
+                    rows_to_use = total_rows if total_rows < 5000 else 3000
+                    
+                    resumo, csv_amostra = _prepare_analysis_payload(filtered_df, max_rows=rows_to_use)
                     compact_query = f"""
                     CONTEXTO: Abaixo há um resumo estatístico dos dados de vendas e uma amostra de linhas.
                     Use APENAS essas informações para responder. Caso precise de algo fora disso, diga que não está disponível.
@@ -1392,7 +1513,7 @@ if not sales_data_df.empty:
                     RESUMO DOS DADOS
                     {resumo}
 
-                    AMOSTRA (CSV - até 1000 linhas)
+                    AMOSTRA (CSV - {'todas as ' + str(rows_to_use) if total_rows < 5000 else 'até ' + str(rows_to_use)} linhas)
                     {csv_amostra}
 
                     PERGUNTA DO USUÁRIO
